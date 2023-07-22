@@ -1,135 +1,84 @@
 const std = @import("std");
+const ascii = std.ascii;
 
-const Calc_Error = error{Parse_Error};
+pub fn main() void {
+    calc("42.069 * (a - 7) / sin(5 + 2)");
+}
 
-const Token_Type = enum { Operator, Identifier, Number };
+// context: anytype, variables: anytype
+pub fn calc(comptime expression: []const u8) void {
+    var t = Tokenizer{};
+    var tokens: []Token = t.tokenize(expression);
 
-const Token = struct {
-    ttype: Token_Type,
-    value: []const u8,
-};
-
-const Lexer = struct {
-    expr: []const u8,
-    index: usize = 0,
-
-    fn create_token(ttype: Token_Type, value: []const u8) Token {
-        return Token{
-            .ttype = ttype,
-            .value = value,
-        };
-    }
-
-    fn scan_with(self: *Lexer, f: *const fn (c: u8) bool) void {
-        for (self.expr[self.index..]) |e| {
-            if (!f(e)) break;
-            self.index += 1;
-        }
-    }
-
-    fn is_operator_part(c: u8) bool {
-        const s = [_]u8{c};
-        const symbols: []const u8 = "+-*/()^%=,";
-        return if (std.ascii.indexOfIgnoreCase(symbols, &s)) |_| true else false;
-    }
-
-    fn scan_operator(self: *Lexer) ?Token {
-        var c: u8 = self.expr[self.index];
-        if (!is_operator_part(c)) return null;
-
-        var a: usize = self.index;
-        self.scan_with(is_operator_part);
-        var b: usize = self.index;
-        return create_token(Token_Type.Operator, self.expr[a..b]);
-    }
-
-    fn is_identifier_part(c: u8) bool {
-        return std.ascii.isAlphabetic(c) or std.ascii.isDigit(c);
-    }
-
-    fn scan_identifier(self: *Lexer) ?Token {
-        var c: u8 = self.expr[self.index];
-        if (!std.ascii.isAlphabetic(c)) return null;
-
-        var a: usize = self.index;
-        self.scan_with(is_identifier_part);
-        var b: usize = self.index;
-        return create_token(Token_Type.Identifier, self.expr[a..b]);
-    }
-
-    fn scan_number(self: *Lexer) !?Token {
-        var c: u8 = self.expr[self.index];
-        if (!std.ascii.isDigit(c) and c != '.') return null;
-
-        var a: usize = self.index;
-
-        if (c != '.') self.scan_with(std.ascii.isDigit);
-
-        if (c == '.') {
-            self.index += 1;
-            self.scan_with(std.ascii.isDigit);
-        }
-
-        if (c == 'e' or c == 'E') {
-            self.index += 1;
-            c = self.expr[self.index];
-
-            if (c == '+' or c == '-' or std.ascii.isDigit(c)) {
-                self.index += 1;
-                self.scan_with(std.ascii.isDigit);
-            } else {
-                std.debug.print("Unexpected character after exponent sign\n", .{});
-                return error.Calc_Error;
-                // Check error printing and error return value, etc.
-            }
-        }
-
-        var b: usize = self.index;
-
-        if (std.ascii.eqlIgnoreCase(self.expr[a..b], ".")) {
-            std.debug.print("Expecting digits after the dot sign\n", .{});
-            return error.Parse_Error;
-            // Check error printing and error return value, etc.
-        }
-
-        return create_token(Token_Type.Number, self.expr[a..b]);
-    }
-
-    pub fn reset(self: *Lexer, str: []u8) void {
-        self.expr = str;
-        self.index = 0;
-    }
-
-    pub fn next(self: *Lexer) !?Token {
-        self.scan_with(std.ascii.isWhitespace); // skip spaces
-        if (self.index >= self.expr.len) return null;
-
-        var token: ?Token = try scan_number(self);
-        if (token) |t| return t;
-
-        token = scan_operator(self);
-        if (token) |t| return t;
-
-        token = scan_identifier(self);
-        if (token) |t| return t;
-
-        std.debug.print("Unknown token\n", .{});
-        return error.Parse_Error;
-    }
-
-    pub fn peek(self: *Lexer) ?Token {
-        var idx: usize = self.index;
-        var token: ?Token = try next(self);
-        self.index = idx;
-        return token;
-    }
-};
-
-pub fn main() !void {
-    var expression: []const u8 = "x = -6 * 7";
-    var lexer = Lexer{ .expr = expression };
-
-    while (try lexer.next()) |t| {
-        std.debug.print("{s} : {s}\n", .{ @tagName(t.ttype), t.value });
+    for (tokens) |tkn| {
+        std.debug.print("{}\n", .{tkn});
     }
 }
+
+// Does this need to be tagged?
+const Token = union(enum) {
+    integer: []const u8,
+    float: []const u8,
+    function: []const u8,
+    variable: []const u8,
+    operator: []const u8,
+};
+
+const Tokenizer = struct {
+    expr: []const u8 = undefined,
+    index: usize = 0,
+
+    pub fn tokenize(self: *Tokenizer, comptime expr: []const u8) []Token {
+        comptime var tokens: []Token = &.{};
+        self.expr = expr;
+
+        while (self.index < self.expr.len) {
+            switch (self.expr[self.index]) {
+                ' ', '\t', '\n', '\r' => self.index += 1,
+                '0'...'9' => {
+                    const integral = slice_using(self, ascii.isDigit);
+                    if (self.index == self.expr.len or self.expr[self.index] != '.') {
+                        tokens = tokens ++ .{Token{ .integer = integral }};
+                    } else {
+                        self.index += 1;
+                        const fractional = slice_using(self, ascii.isDigit);
+                        tokens = tokens ++ .{Token{ .float = integral ++ "." ++ fractional }};
+                    }
+                },
+                '_', 'a'...'z', 'A'...'Z' => {
+                    const ident = slice_using(self, is_part_identifier);
+                    const tkn = if (self.index != self.expr.len and self.expr[self.index] == '(') {
+                        Token{ .function = ident };
+                    } else {
+                        Token{ .variable = ident };
+                    };
+                    tokens = tokens ++ .{tkn};
+                },
+                else => {
+                    if (ascii.isPrint(self.expr[self.index])) {
+                        const op = slice_using(self, is_part_operator);
+                        tokens = tokens ++ .{Token{ .operator = op }};
+                    } else {
+                        @compileError("Invalid character in expression: " ++
+                            self.expr[self.index .. self.index + 1] + "\n");
+                    }
+                },
+            }
+        }
+        return tokens;
+    }
+
+    fn slice_using(self: *Tokenizer, pred: *const fn (c: u8) bool) []const u8 {
+        var start: usize = self.index;
+        inline while (pred(self.expr[self.index])) self.index += 1;
+        return self.expr[start..self.index];
+    }
+
+    fn is_part_identifier(c: u8) bool {
+        return c == '_' or ascii.isAlphabetic(c) or ascii.isDigit(c);
+    }
+
+    fn is_part_operator(c: u8) bool {
+        return ascii.isPrint(c) and !ascii.isWhitespace(c);
+    }
+};
