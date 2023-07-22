@@ -2,16 +2,16 @@ const std = @import("std");
 const ascii = std.ascii;
 
 pub fn main() void {
-    calc("42.069 * (a - 7) / sin(5 + 2)");
+    calc("   ding + 42.069 * (a - 7) / sin(5 + 2)");
 }
 
 // context: anytype, variables: anytype
 pub fn calc(comptime expression: []const u8) void {
-    var t = Tokenizer{};
-    var tokens: []Token = t.tokenize(expression);
+    comptime var t = Tokenizer{};
+    comptime var tokens: []const Token = t.tokenize(expression);
 
     for (tokens) |tkn| {
-        std.debug.print("{}\n", .{tkn});
+        std.debug.print("{s} : {}\n", .{ @tagName(tkn), tkn });
     }
 }
 
@@ -28,11 +28,11 @@ const Tokenizer = struct {
     expr: []const u8 = undefined,
     index: usize = 0,
 
-    pub fn tokenize(self: *Tokenizer, comptime expr: []const u8) []Token {
-        comptime var tokens: []Token = &.{};
+    pub fn tokenize(self: *Tokenizer, comptime expr: []const u8) []const Token {
+        var tokens: []const Token = &.{};
         self.expr = expr;
 
-        while (self.index < self.expr.len) {
+        inline while (self.index < self.expr.len) {
             switch (self.expr[self.index]) {
                 ' ', '\t', '\n', '\r' => self.index += 1,
                 '0'...'9' => {
@@ -47,12 +47,11 @@ const Tokenizer = struct {
                 },
                 '_', 'a'...'z', 'A'...'Z' => {
                     const ident = slice_using(self, is_part_identifier);
-                    const tkn = if (self.index != self.expr.len and self.expr[self.index] == '(') {
-                        Token{ .function = ident };
+                    if (self.index != self.expr.len and self.expr[self.index] == '(') {
+                        tokens = tokens ++ .{Token{ .function = ident }};
                     } else {
-                        Token{ .variable = ident };
-                    };
-                    tokens = tokens ++ .{tkn};
+                        tokens = tokens ++ .{Token{ .variable = ident }};
+                    }
                 },
                 else => {
                     if (ascii.isPrint(self.expr[self.index])) {
@@ -70,7 +69,9 @@ const Tokenizer = struct {
 
     fn slice_using(self: *Tokenizer, pred: *const fn (c: u8) bool) []const u8 {
         var start: usize = self.index;
-        inline while (pred(self.expr[self.index])) self.index += 1;
+        while (self.index < self.expr.len and pred(self.expr[self.index])) {
+            self.index += 1;
+        }
         return self.expr[start..self.index];
     }
 
