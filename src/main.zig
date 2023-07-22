@@ -11,17 +11,15 @@ pub fn calc(comptime expression: []const u8) void {
     comptime var tokens: []const Token = t.tokenize(expression);
 
     for (tokens) |tkn| {
-        std.debug.print("{s} : {}\n", .{ @tagName(tkn), tkn });
+        std.debug.print("{} : {s}\n", .{ tkn.ttype, tkn.value });
     }
 }
 
-// Does this need to be tagged?
-const Token = union(enum) {
-    integer: []const u8,
-    float: []const u8,
-    function: []const u8,
-    variable: []const u8,
-    operator: []const u8,
+const Token = struct {
+    ttype: Token_Type,
+    value: []const u8,
+
+    const Token_Type = enum { integer, float, function, variable, operator };
 };
 
 const Tokenizer = struct {
@@ -38,25 +36,32 @@ const Tokenizer = struct {
                 '0'...'9' => {
                     const integral = slice_using(self, ascii.isDigit);
                     if (self.index == self.expr.len or self.expr[self.index] != '.') {
-                        tokens = tokens ++ .{Token{ .integer = integral }};
+                        tokens = tokens ++ .{Token{ .ttype = .integer, .value = integral }};
                     } else {
                         self.index += 1;
                         const fractional = slice_using(self, ascii.isDigit);
-                        tokens = tokens ++ .{Token{ .float = integral ++ "." ++ fractional }};
+                        tokens = tokens ++ .{Token{ .ttype = .float, .value = integral ++ "." ++ fractional }};
                     }
                 },
                 '_', 'a'...'z', 'A'...'Z' => {
                     const ident = slice_using(self, is_part_identifier);
                     if (self.index != self.expr.len and self.expr[self.index] == '(') {
-                        tokens = tokens ++ .{Token{ .function = ident }};
+                        tokens = tokens ++ .{Token{ .ttype = .function, .value = ident }};
                     } else {
-                        tokens = tokens ++ .{Token{ .variable = ident }};
+                        tokens = tokens ++ .{Token{ .ttype = .variable, .value = ident }};
                     }
+                },
+                '(', ')', ',' => {
+                    tokens = tokens ++ .{Token{
+                        .ttype = .operator,
+                        .value = self.expr[self.index .. self.index + 1],
+                    }};
+                    self.index += 1;
                 },
                 else => {
                     if (ascii.isPrint(self.expr[self.index])) {
                         const op = slice_using(self, is_part_operator);
-                        tokens = tokens ++ .{Token{ .operator = op }};
+                        tokens = tokens ++ .{Token{ .ttype = .operator, .value = op }};
                     } else {
                         @compileError("Invalid character in expression: " ++
                             self.expr[self.index .. self.index + 1] + "\n");
@@ -80,6 +85,9 @@ const Tokenizer = struct {
     }
 
     fn is_part_operator(c: u8) bool {
-        return ascii.isPrint(c) and !ascii.isWhitespace(c);
+        for ("!#$%&*+-./:;<=>?@[\\]^`|~") |symbol| {
+            if (c == symbol) return true;
+        }
+        return false;
     }
 };
