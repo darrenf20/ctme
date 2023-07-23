@@ -20,64 +20,74 @@ const Token = struct {
     value: []const u8,
 
     const Token_Type = enum { integer, float, function, variable, operator };
+
+    fn init(ttype: Token_Type, value: []const u8) Token {
+        return Token{ .ttype = ttype, .value = value };
+    }
 };
 
 const Tokenizer = struct {
     expr: []const u8 = undefined,
-    index: usize = 0,
+    idx: usize = 0,
 
     pub fn tokenize(self: *Tokenizer, comptime expr: []const u8) []const Token {
         var tokens: []const Token = &.{};
         self.expr = expr;
 
-        inline while (self.index < self.expr.len) {
-            switch (self.expr[self.index]) {
-                ' ', '\t', '\n', '\r' => self.index += 1,
-                '0'...'9' => {
+        inline while (self.idx < self.expr.len) {
+            const c = self.expr[self.idx];
+
+            if (ascii.isWhitespace(c)) {
+                self.idx += 1;
+                continue;
+            }
+
+            tokens = tokens ++ switch (c) {
+                '0'...'9' => blk: {
                     const integral = slice_using(self, ascii.isDigit);
-                    if (self.index == self.expr.len or self.expr[self.index] != '.') {
-                        tokens = tokens ++ .{Token{ .ttype = .integer, .value = integral }};
+                    if (self.idx == self.expr.len or self.expr[self.idx] != '.') {
+                        break :blk .{Token.init(.integer, integral)};
                     } else {
-                        self.index += 1;
+                        self.idx += 1;
                         const fractional = slice_using(self, ascii.isDigit);
-                        tokens = tokens ++ .{Token{ .ttype = .float, .value = integral ++ "." ++ fractional }};
+                        const decimal = integral ++ "." ++ fractional;
+                        break :blk .{Token.init(.float, decimal)};
                     }
                 },
-                '_', 'a'...'z', 'A'...'Z' => {
+                '_', 'a'...'z', 'A'...'Z' => blk: {
                     const ident = slice_using(self, is_part_identifier);
-                    if (self.index != self.expr.len and self.expr[self.index] == '(') {
-                        tokens = tokens ++ .{Token{ .ttype = .function, .value = ident }};
+                    if (self.idx != self.expr.len and self.expr[self.idx] == '(') {
+                        break :blk .{Token.init(.function, ident)};
                     } else {
-                        tokens = tokens ++ .{Token{ .ttype = .variable, .value = ident }};
+                        break :blk .{Token.init(.variable, ident)};
                     }
                 },
-                '(', ')', ',' => {
-                    tokens = tokens ++ .{Token{
-                        .ttype = .operator,
-                        .value = self.expr[self.index .. self.index + 1],
-                    }};
-                    self.index += 1;
+                '(', ')', ',' => blk: {
+                    // Another way to get slice of single char?
+                    defer self.idx += 1;
+                    const char = self.expr[self.idx .. self.idx + 1];
+                    break :blk .{Token.init(.operator, char)};
                 },
-                else => {
-                    if (ascii.isPrint(self.expr[self.index])) {
+                else => blk: {
+                    if (ascii.isPrint(c)) {
                         const op = slice_using(self, is_part_operator);
-                        tokens = tokens ++ .{Token{ .ttype = .operator, .value = op }};
+                        break :blk .{Token.init(.operator, op)};
                     } else {
                         @compileError("Invalid character in expression: " ++
-                            self.expr[self.index .. self.index + 1] + "\n");
+                            self.expr[self.idx .. self.idx + 1] + "\n");
                     }
                 },
-            }
+            };
         }
         return tokens;
     }
 
     fn slice_using(self: *Tokenizer, pred: *const fn (c: u8) bool) []const u8 {
-        var start: usize = self.index;
-        while (self.index < self.expr.len and pred(self.expr[self.index])) {
-            self.index += 1;
+        var start: usize = self.idx;
+        while (self.idx < self.expr.len and pred(self.expr[self.idx])) {
+            self.idx += 1;
         }
-        return self.expr[start..self.index];
+        return self.expr[start..self.idx];
     }
 
     fn is_part_identifier(c: u8) bool {
