@@ -11,18 +11,18 @@ pub fn calc(comptime expression: []const u8) void {
     comptime var tokens: []const Token = t.tokenize(expression);
 
     for (tokens) |tkn| {
-        std.debug.print("{} : {s}\n", .{ tkn.ttype, tkn.value });
+        std.debug.print("{} : {s}\n", .{ tkn.ttype, tkn.string });
     }
 }
 
 const Token = struct {
     ttype: Token_Type,
-    value: []const u8,
+    string: []const u8,
 
     const Token_Type = enum { integer, float, function, variable, operator };
 
-    fn init(ttype: Token_Type, value: []const u8) Token {
-        return Token{ .ttype = ttype, .value = value };
+    fn init(ttype: Token_Type, string: []const u8) Token {
+        return Token{ .ttype = ttype, .string = string };
     }
 };
 
@@ -30,7 +30,7 @@ const Tokenizer = struct {
     expr: []const u8 = undefined,
     idx: usize = 0,
 
-    pub fn tokenize(self: *Tokenizer, comptime expr: []const u8) []const Token {
+    fn tokenize(self: *Tokenizer, comptime expr: []const u8) []const Token {
         var tokens: []const Token = &.{};
         self.expr = expr;
 
@@ -45,7 +45,7 @@ const Tokenizer = struct {
             tokens = tokens ++ switch (c) {
                 '0'...'9' => blk: {
                     const integral = slice_using(self, ascii.isDigit);
-                    if (self.idx == self.expr.len or self.expr[self.idx] != '.') {
+                    if (self.idx < self.expr.len and self.expr[self.idx] != '.') {
                         break :blk .{Token.init(.integer, integral)};
                     } else {
                         self.idx += 1;
@@ -56,7 +56,7 @@ const Tokenizer = struct {
                 },
                 '_', 'a'...'z', 'A'...'Z' => blk: {
                     const ident = slice_using(self, is_part_identifier);
-                    if (self.idx != self.expr.len and self.expr[self.idx] == '(') {
+                    if (self.idx < self.expr.len and self.expr[self.idx] == '(') {
                         break :blk .{Token.init(.function, ident)};
                     } else {
                         break :blk .{Token.init(.variable, ident)};
@@ -64,8 +64,8 @@ const Tokenizer = struct {
                 },
                 '(', ')', ',' => blk: {
                     // Another way to get slice of single char?
-                    defer self.idx += 1;
                     const char = self.expr[self.idx .. self.idx + 1];
+                    self.idx += 1;
                     break :blk .{Token.init(.operator, char)};
                 },
                 else => blk: {
@@ -82,11 +82,9 @@ const Tokenizer = struct {
         return tokens;
     }
 
-    fn slice_using(self: *Tokenizer, pred: *const fn (c: u8) bool) []const u8 {
+    fn slice_using(self: *Tokenizer, p: *const fn (c: u8) bool) []const u8 {
         var start: usize = self.idx;
-        while (self.idx < self.expr.len and pred(self.expr[self.idx])) {
-            self.idx += 1;
-        }
+        while (self.idx < self.expr.len and p(self.expr[self.idx])) self.idx += 1;
         return self.expr[start..self.idx];
     }
 
@@ -95,9 +93,31 @@ const Tokenizer = struct {
     }
 
     fn is_part_operator(c: u8) bool {
-        for ("!#$%&*+-./:;<=>?@[\\]^`|~") |symbol| {
-            if (c == symbol) return true;
-        }
+        for ("!#$%&*+-./:;<=>?@[\\]^`|~") |s| if (c == s) return true;
         return false;
+    }
+};
+
+const AST_Node = struct {
+    // Maybe stick with Token, and have parser construct the AST,
+    // and parsing done at evaluation phase
+    // Partial AST evaluation at phase 2 seems difficult/complicated
+    value: Value,
+    lnode: *AST_Node,
+    rnode: *AST_Node,
+
+    const Value = union(enum) {
+        integer: i128,
+        float: f128,
+        function,
+        variable,
+        operator,
+        lparen,
+        rparen,
+        comma,
+    };
+
+    fn init(value: Value, left: *AST_Node, right: *AST_Node) AST_Node {
+        return AST_Node{ .value = value, .lnode = left, .rnode = right };
     }
 };
