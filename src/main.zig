@@ -2,17 +2,32 @@ const std = @import("std");
 const ascii = std.ascii;
 
 pub fn main() void {
-    calc("   ding + 42.069 * (a - 7) / sin(5 + 2)");
+    // Check out potential Zig issue that discusses
+    // concatenating structs using ++
+    // Would be possible to create context structs, then
+    // bundle a variables struct in with it as/when needed
+    const context = .{
+        .constants = .{},
+
+        .functions = .{},
+
+        .operators = .{},
+    };
+
+    calc(context, "   ding + 42.069 * (a - 7) / sin(5 + 2)");
 }
 
-// context: anytype, variables: anytype
-pub fn calc(comptime expression: []const u8) void {
+pub fn calc(comptime context: anytype, comptime expression: []const u8) void {
     comptime var t = Tokenizer{};
     comptime var tokens: []const Token = t.tokenize(expression);
 
-    for (tokens) |tkn| {
-        std.debug.print("{} : {s}\n", .{ tkn.ttype, tkn.string });
-    }
+    //for (tokens) |tkn| {
+    //    std.debug.print("{} : {s}\n", .{ tkn.ttype, tkn.string });
+    //}
+
+    comptime var p = Parser{};
+    comptime var tree: Node = p.parse(tokens, context);
+    _ = tree;
 }
 
 const Token = struct {
@@ -98,26 +113,87 @@ const Tokenizer = struct {
     }
 };
 
-const AST_Node = struct {
-    // Maybe stick with Token, and have parser construct the AST,
-    // and parsing done at evaluation phase
-    // Partial AST evaluation at phase 2 seems difficult/complicated
-    value: Value,
-    lnode: *AST_Node,
-    rnode: *AST_Node,
+const Node = struct {
+    token: Token,
+    ntype: Node_Type,
+    data: []Node,
 
-    const Value = union(enum) {
-        integer: i128,
-        float: f128,
-        function,
-        variable,
-        operator,
-        lparen,
-        rparen,
-        comma,
-    };
+    const Node_Type = enum { leaf, unary, binary, arglist };
 
-    fn init(value: Value, left: *AST_Node, right: *AST_Node) AST_Node {
-        return AST_Node{ .value = value, .lnode = left, .rnode = right };
+    fn init(token: Token, ntype: Node_Type, data: []Node) Node {
+        return Node{ .token = token, .ntype = ntype, .data = data };
     }
+};
+
+const Parser = struct {
+    tokens: []const Token = undefined,
+    idx: usize = 0,
+
+    fn parse(
+        self: *Parser,
+        comptime tokens: []const Token,
+        comptime context: anytype,
+    ) Node {
+        self.tokens = tokens;
+        const tree: Node = parse_prec3(self, context);
+        return tree;
+    }
+
+    fn parse_prec3(self: *Parser, context: anytype) Node {
+        var node: Node = parse_prec2(self, context);
+        var tkn: Token = self.tokens[self.idx];
+        while (tkn.ttype == .operator and has_key(context.prec3, tkn.string)) {
+            self.idx += 1;
+            node = Node.init(tkn, .binary, .{ node, parse_prec2(self, context) });
+        }
+        return node;
+    }
+
+    fn parse_prec2(self: *Parser, context: anytype) Node {
+        var node: Node = parse_prec1(self, context);
+        var tkn: Token = self.tokens[self.idx];
+        while (tkn.ttype == .operator and has_key(context.prec2, tkn.string)) {
+            self.idx += 1;
+            node = Node.init(tkn, .binary, &.{ node, parse_prec1(self, context) });
+        }
+        return node;
+    }
+
+    fn parse_prec1(self: *Parser, context: anytype) Node {
+        var tkn: Token = self.tokens[self.idx];
+        if (tkn.ttype == .operator and has_key(context.prec1, tkn.string)) {
+            self.idx += 1;
+            return Node.init(tkn, .unary, &.{parse_prec1(self, context)});
+        }
+        return parse_prec0(self, context);
+    }
+
+    fn parse_prec0(self: *Parser, context: anytype) Node {
+        var tkn: Token = self.tokens[self.idx];
+
+        if (std.mem.eql(u8, tkn.string, "(")) {
+            self.idx += 1;
+            var node: Node = parse_prec3(self, context);
+            if (!std.mem.eql(u8, self.tokens[self.idx], ")")) {
+                @compileError("Error: missing ')'\n");
+            }
+            return node;
+        }
+
+        if (tkn.ttype == .function and has_key(context.functions, tkn.string)) {
+            self.idx += 1;
+            // parse args
+            return Node.init(tkn, .arglist, &.{}); // args go here
+        }
+
+        return Node.init(tkn, .leaf, &.{});
+    }
+
+    fn has_key(arr: anytype, key: []const u8) bool {
+        for (arr) |pair| if (std.mem.eql(u8, pair[0], key)) return true;
+        return false;
+    }
+
+    // need a func for getting next token, because I have to do a
+    // bounds check (self.idx < self.tokens.len)
 };
