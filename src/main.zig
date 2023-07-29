@@ -114,13 +114,13 @@ const Tokenizer = struct {
 };
 
 const Node = struct {
-    token: Token,
+    token: *Token,
     ntype: Node_Type,
     data: []Node,
 
     const Node_Type = enum { leaf, unary, binary, arglist };
 
-    fn init(token: Token, ntype: Node_Type, data: []Node) Node {
+    fn init(token: *Token, ntype: Node_Type, data: []Node) Node {
         return Node{ .token = token, .ntype = ntype, .data = data };
     }
 };
@@ -144,7 +144,7 @@ const Parser = struct {
         var tkn: Token = self.tokens[self.idx];
         while (tkn.ttype == .operator and has_key(context.prec3, tkn.string)) {
             self.idx += 1;
-            node = Node.init(tkn, .binary, .{ node, parse_prec2(self, context) });
+            node = Node.init(&tkn, .binary, .{ node, parse_prec2(self, context) });
         }
         return node;
     }
@@ -154,7 +154,7 @@ const Parser = struct {
         var tkn: Token = self.tokens[self.idx];
         while (tkn.ttype == .operator and has_key(context.prec2, tkn.string)) {
             self.idx += 1;
-            node = Node.init(tkn, .binary, &.{ node, parse_prec1(self, context) });
+            node = Node.init(&tkn, .binary, &.{ node, parse_prec1(self, context) });
         }
         return node;
     }
@@ -163,7 +163,7 @@ const Parser = struct {
         var tkn: Token = self.tokens[self.idx];
         if (tkn.ttype == .operator and has_key(context.prec1, tkn.string)) {
             self.idx += 1;
-            return Node.init(tkn, .unary, &.{parse_prec1(self, context)});
+            return Node.init(&tkn, .unary, &.{parse_prec1(self, context)});
         }
         return parse_prec0(self, context);
     }
@@ -171,27 +171,39 @@ const Parser = struct {
     fn parse_prec0(self: *Parser, context: anytype) Node {
         var tkn: Token = self.tokens[self.idx];
 
-        if (std.mem.eql(u8, tkn.string, "(")) {
+        if (is_symbol(self, '(')) {
             self.idx += 1;
             var node: Node = parse_prec3(self, context);
-            if (!std.mem.eql(u8, self.tokens[self.idx], ")")) {
-                @compileError("Error: missing ')'\n");
-            }
+
+            if (!is_symbol(self, ')')) @compileError("Error: missing ')'\n");
+
             return node;
         }
 
         if (tkn.ttype == .function and has_key(context.functions, tkn.string)) {
-            self.idx += 1;
-            // parse args
-            return Node.init(tkn, .arglist, &.{}); // args go here
-        }
+            self.idx += 2;
+            var args: []Node = &.{};
 
-        return Node.init(tkn, .leaf, &.{});
+            while (self.idx < self.tokens.len and !is_symbol(self, ')')) {
+                if (is_symbol(self, ',')) continue;
+                args = args ++ .{parse_prec3(self, context)};
+                self.idx += 1;
+            }
+
+            if (!is_symbol(self, ')')) @compileError("Error: missing ')'\n");
+
+            return Node.init(&tkn, .arglist, args);
+        }
+        return Node.init(&tkn, .leaf, &.{});
     }
 
     fn has_key(arr: anytype, key: []const u8) bool {
-        for (arr) |pair| if (std.mem.eql(u8, pair[0], key)) return true;
+        for (arr) |pair| if (comptime std.mem.eql(u8, pair[0], key)) return true;
         return false;
+    }
+
+    fn is_symbol(self: *Parser, c: u8) bool {
+        return self.tokens[self.idx].string[0] == c;
     }
 
     // need a func for getting next token, because I have to do a
