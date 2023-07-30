@@ -26,7 +26,7 @@ pub fn calc(comptime context: anytype, comptime expression: []const u8) void {
     //}
 
     comptime var p = Parser{};
-    comptime var tree: Node = p.parse(tokens, context);
+    comptime var tree: *const Node = p.parse(tokens, context);
     _ = tree;
 }
 
@@ -116,12 +116,12 @@ const Tokenizer = struct {
 const Node = struct {
     token: *Token,
     ntype: Node_Type,
-    data: []Node,
+    data: []*Node,
 
     const Node_Type = enum { leaf, unary, binary, arglist };
 
-    fn init(token: *Token, ntype: Node_Type, data: []Node) Node {
-        return Node{ .token = token, .ntype = ntype, .data = data };
+    fn init(token: *Token, ntype: Node_Type, data: []*Node) *const Node {
+        return &Node{ .token = token, .ntype = ntype, .data = data };
     }
 };
 
@@ -133,14 +133,14 @@ const Parser = struct {
         self: *Parser,
         comptime tokens: []const Token,
         comptime context: anytype,
-    ) Node {
+    ) *const Node {
         self.tokens = tokens;
-        const tree: Node = parse_prec3(self, context);
+        const tree: *const Node = parse_prec3(self, context);
         return tree;
     }
 
-    fn parse_prec3(self: *Parser, context: anytype) Node {
-        var node: Node = parse_prec2(self, context);
+    fn parse_prec3(self: *Parser, context: anytype) *const Node {
+        var node: *const Node = parse_prec2(self, context);
         var tkn: Token = self.tokens[self.idx];
         while (tkn.ttype == .operator and has_key(context.prec3, tkn.string)) {
             self.idx += 1;
@@ -149,8 +149,8 @@ const Parser = struct {
         return node;
     }
 
-    fn parse_prec2(self: *Parser, context: anytype) Node {
-        var node: Node = parse_prec1(self, context);
+    fn parse_prec2(self: *Parser, context: anytype) *const Node {
+        var node: *const Node = parse_prec1(self, context);
         var tkn: Token = self.tokens[self.idx];
         while (tkn.ttype == .operator and has_key(context.prec2, tkn.string)) {
             self.idx += 1;
@@ -159,7 +159,7 @@ const Parser = struct {
         return node;
     }
 
-    fn parse_prec1(self: *Parser, context: anytype) Node {
+    fn parse_prec1(self: *Parser, context: anytype) *const Node {
         var tkn: Token = self.tokens[self.idx];
         if (tkn.ttype == .operator and has_key(context.prec1, tkn.string)) {
             self.idx += 1;
@@ -168,12 +168,12 @@ const Parser = struct {
         return parse_prec0(self, context);
     }
 
-    fn parse_prec0(self: *Parser, context: anytype) Node {
+    fn parse_prec0(self: *Parser, context: anytype) *const Node {
         var tkn: Token = self.tokens[self.idx];
 
         if (is_symbol(self, '(')) {
             self.idx += 1;
-            var node: Node = parse_prec3(self, context);
+            var node: *const Node = parse_prec3(self, context);
 
             if (!is_symbol(self, ')')) @compileError("Error: missing ')'\n");
 
@@ -182,7 +182,7 @@ const Parser = struct {
 
         if (tkn.ttype == .function and has_key(context.functions, tkn.string)) {
             self.idx += 2;
-            var args: []Node = &.{};
+            var args: []*Node = &.{};
 
             while (self.idx < self.tokens.len and !is_symbol(self, ')')) {
                 if (is_symbol(self, ',')) continue;
