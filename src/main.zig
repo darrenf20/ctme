@@ -7,11 +7,20 @@ pub fn main() void {
     // Would be possible to create context structs, then
     // bundle a variables struct in with it as/when needed
     const context = .{
-        .constants = .{},
+        .constants = .{
+            .{ "ding", 360 },
+        },
 
-        .functions = .{},
+        .functions = .{
+            .{ "sin", std.math.sin },
+        },
 
-        .operators = .{},
+        .operators = .{
+            .{ "+", std.math.add },
+            .{ "-", std.math.sub },
+            .{ "*", std.math.mul },
+            .{ "/", std.math.divExact },
+        },
     };
 
     calc(context, "   ding + 42.069 * (a - 7) / sin(5 + 2)");
