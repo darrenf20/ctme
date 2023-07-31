@@ -1,3 +1,5 @@
+// YOU ARE ON NOPTR BRANCH
+// REMEMBER TO SWITCH BACK WHEN DONE
 const std = @import("std");
 const ascii = std.ascii;
 
@@ -15,12 +17,19 @@ pub fn main() void {
             .{ "sin", std.math.sin },
         },
 
-        .operators = .{
+        .prec3 = .{
             .{ "+", std.math.add },
             .{ "-", std.math.sub },
+        },
+
+        .prec2 = .{
             .{ "*", std.math.mul },
             .{ "/", std.math.divExact },
         },
+
+        .prec1 = .{},
+
+        .prec0 = .{},
     };
 
     calc(context, "   ding + 42.069 * (a - 7) / sin(5 + 2)");
@@ -35,7 +44,9 @@ pub fn calc(comptime context: anytype, comptime expression: []const u8) void {
     //}
 
     comptime var p = Parser{};
-    comptime var tree: *const Node = p.parse(tokens, context);
+    comptime var tree: Node = p.parse(tokens, context);
+
+    //print_tree(tree, 0);
     _ = tree;
 }
 
@@ -88,7 +99,7 @@ const Tokenizer = struct {
                 },
                 '(', ')', ',' => blk: {
                     // Another way to get slice of single char?
-                    const char = self.expr[self.idx .. self.idx + 1];
+                    const char = self.expr[self.idx .. self.idx + 1]; // &self.expr[self.idx] ?
                     self.idx += 1;
                     break :blk .{Token.init(.operator, char)};
                 },
@@ -123,14 +134,14 @@ const Tokenizer = struct {
 };
 
 const Node = struct {
-    token: *Token,
+    token: *const Token,
     ntype: Node_Type,
-    data: []*Node,
+    data: []const Node,
 
     const Node_Type = enum { leaf, unary, binary, arglist };
 
-    fn init(token: *Token, ntype: Node_Type, data: []*Node) *const Node {
-        return &Node{ .token = token, .ntype = ntype, .data = data };
+    fn init(token: *const Token, ntype: Node_Type, data: []const Node) Node {
+        return Node{ .token = token, .ntype = ntype, .data = data };
     }
 };
 
@@ -142,56 +153,60 @@ const Parser = struct {
         self: *Parser,
         comptime tokens: []const Token,
         comptime context: anytype,
-    ) *const Node {
+    ) Node {
         self.tokens = tokens;
-        const tree: *const Node = parse_prec3(self, context);
+        const tree: Node = parse_prec3(self, context);
+        if (self.idx != self.tokens.len) @compileError("Unexpected token in expression\n");
         return tree;
     }
 
-    fn parse_prec3(self: *Parser, context: anytype) *const Node {
-        var node: *const Node = parse_prec2(self, context);
-        var tkn: Token = self.tokens[self.idx];
+    fn parse_prec3(self: *Parser, context: anytype) Node {
+        comptime var node: Node = parse_prec2(self, context);
+        comptime var tkn: Token = self.tokens[self.idx];
         while (tkn.ttype == .operator and has_key(context.prec3, tkn.string)) {
             self.idx += 1;
-            node = Node.init(&tkn, .binary, .{ node, parse_prec2(self, context) });
+            node = Node.init(&tkn, .binary, &[_]Node{ node, parse_prec2(self, context) });
+            tkn = self.tokens[self.idx];
         }
         return node;
     }
 
-    fn parse_prec2(self: *Parser, context: anytype) *const Node {
-        var node: *const Node = parse_prec1(self, context);
-        var tkn: Token = self.tokens[self.idx];
+    fn parse_prec2(self: *Parser, context: anytype) Node {
+        comptime var node: Node = parse_prec1(self, context);
+        comptime var tkn: Token = self.tokens[self.idx];
         while (tkn.ttype == .operator and has_key(context.prec2, tkn.string)) {
             self.idx += 1;
-            node = Node.init(&tkn, .binary, &.{ node, parse_prec1(self, context) });
+            node = Node.init(&tkn, .binary, &[_]Node{ node, parse_prec1(self, context) });
+            tkn = self.tokens[self.idx];
         }
         return node;
     }
 
-    fn parse_prec1(self: *Parser, context: anytype) *const Node {
-        var tkn: Token = self.tokens[self.idx];
+    fn parse_prec1(self: *Parser, context: anytype) Node {
+        check_index(self);
+        const tkn: Token = self.tokens[self.idx];
+
         if (tkn.ttype == .operator and has_key(context.prec1, tkn.string)) {
             self.idx += 1;
-            return Node.init(&tkn, .unary, &.{parse_prec1(self, context)});
+            return Node.init(&tkn, .unary, &[_]Node{parse_prec1(self, context)});
         }
         return parse_prec0(self, context);
     }
 
-    fn parse_prec0(self: *Parser, context: anytype) *const Node {
-        var tkn: Token = self.tokens[self.idx];
+    fn parse_prec0(self: *Parser, context: anytype) Node {
+        check_index(self);
+        const tkn: Token = self.tokens[self.idx];
 
         if (is_symbol(self, '(')) {
             self.idx += 1;
-            var node: *const Node = parse_prec3(self, context);
-
+            const node: Node = parse_prec3(self, context);
             if (!is_symbol(self, ')')) @compileError("Error: missing ')'\n");
-
             return node;
         }
 
         if (tkn.ttype == .function and has_key(context.functions, tkn.string)) {
             self.idx += 2;
-            var args: []*Node = &.{};
+            comptime var args = [_]Node{};
 
             while (self.idx < self.tokens.len and !is_symbol(self, ')')) {
                 if (is_symbol(self, ',')) continue;
@@ -203,7 +218,10 @@ const Parser = struct {
 
             return Node.init(&tkn, .arglist, args);
         }
-        return Node.init(&tkn, .leaf, &.{});
+
+        // Need to check if token is in variables or constants
+        self.idx += 1;
+        return Node.init(&tkn, .leaf, &[_]Node{});
     }
 
     fn has_key(arr: anytype, key: []const u8) bool {
@@ -215,6 +233,17 @@ const Parser = struct {
         return self.tokens[self.idx].string[0] == c;
     }
 
-    // need a func for getting next token, because I have to do a
-    // bounds check (self.idx < self.tokens.len)
+    fn check_index(self: *Parser) void {
+        if (self.idx >= self.tokens.len) @compileError("Reached end of tokens\n");
+    }
 };
+
+fn print_tree(n: *const Node, i: usize) void {
+    for (0..i) |_| std.debug.print("   ", .{});
+    std.debug.print(
+        "{s} ({s} : {s})\n",
+        .{ n.token.string, @tagName(n.ntype), @tagName(n.token.ttype) },
+    );
+    for (n.data) |d| print_tree(d, i + 1);
+    //std.debug.print("\n", .{});
+}
