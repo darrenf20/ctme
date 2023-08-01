@@ -190,12 +190,13 @@ const Parser = struct {
             p.idx += 1;
             const node: Node = parse_prec3(p, context);
             if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
+            p.idx += 1;
             return node;
         }
 
         if (tkn.tag == .func and has_key(context.functions, tkn.str)) {
             p.idx += 2;
-            comptime var args = [_]Node{};
+            comptime var args: []const Node = &.{};
 
             while (inbounds(p) and !is_symbol(p, ')')) {
                 if (is_symbol(p, ',')) {
@@ -206,7 +207,7 @@ const Parser = struct {
             }
 
             if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
-            return Node.init(&tkn, .arglist, args);
+            return Node.init(tkn, .arglist, args);
         }
 
         // Need to check if token is in variables or constants
