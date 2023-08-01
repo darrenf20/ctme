@@ -37,24 +37,24 @@ pub fn calc(comptime context: anytype, comptime expression: []const u8) void {
     comptime var t = Tokenizer{ .expr = expression };
     const tokens: []const Token = comptime t.tokenize();
 
-    for (tokens) |tkn| {
-        std.debug.print("{} : {s}\n", .{ tkn.ttype, tkn.string });
-    }
+    print_tokens(tokens);
+    std.debug.print("\n", .{});
 
     comptime var p = Parser{ .tokens = tokens };
     comptime var tree: Node = p.parse(context);
 
     print_tree(tree, 0);
+    std.debug.print("\n", .{});
 }
 
 const Token = struct {
     ttype: Token_Type,
-    string: []const u8,
+    str: []const u8,
 
     const Token_Type = enum { int, float, func, value, op };
 
-    fn init(ttype: Token_Type, string: []const u8) Token {
-        return Token{ .ttype = ttype, .string = string };
+    fn init(ttype: Token_Type, str: []const u8) Token {
+        return Token{ .ttype = ttype, .str = str };
     }
 };
 
@@ -153,7 +153,7 @@ const Parser = struct {
         comptime var node: Node = parse_prec2(p, context);
         comptime var tkn: Token = p.tokens[p.idx];
 
-        while (tkn.ttype == .op and has_key(context.prec3, tkn.string)) {
+        while (tkn.ttype == .op and has_key(context.prec3, tkn.str)) {
             p.idx += 1;
             node = Node.init(&tkn, .binary, &[_]Node{ node, parse_prec2(p, context) });
             tkn = p.tokens[p.idx];
@@ -165,7 +165,7 @@ const Parser = struct {
         comptime var node: Node = parse_prec1(p, context);
         comptime var tkn: Token = p.tokens[p.idx];
 
-        while (tkn.ttype == .op and has_key(context.prec2, tkn.string)) {
+        while (tkn.ttype == .op and has_key(context.prec2, tkn.str)) {
             p.idx += 1;
             node = Node.init(&tkn, .binary, &[_]Node{ node, parse_prec1(p, context) });
             tkn = p.tokens[p.idx];
@@ -176,7 +176,7 @@ const Parser = struct {
     fn parse_prec1(p: *Parser, context: anytype) Node {
         const tkn: Token = p.tokens[p.idx];
 
-        if (tkn.ttype == .op and has_key(context.prec1, tkn.string)) {
+        if (tkn.ttype == .op and has_key(context.prec1, tkn.str)) {
             p.idx += 1;
             return Node.init(&tkn, .unary, &[_]Node{parse_prec1(p, context)});
         }
@@ -193,7 +193,7 @@ const Parser = struct {
             return node;
         }
 
-        if (tkn.ttype == .func and has_key(context.functions, tkn.string)) {
+        if (tkn.ttype == .func and has_key(context.functions, tkn.str)) {
             p.idx += 2;
             comptime var args = [_]Node{};
 
@@ -217,7 +217,7 @@ const Parser = struct {
     }
 
     fn is_symbol(self: *Parser, symbol: u8) bool {
-        return self.tokens[self.idx].string[0] == symbol;
+        return self.tokens[self.idx].str[0] == symbol;
     }
 
     fn inbounds(self: *Parser) bool {
@@ -225,12 +225,15 @@ const Parser = struct {
     }
 };
 
+// Debug functions
+fn print_tokens(ts: []const Token) void {
+    for (ts) |t| std.debug.print("{s} [{s}]\n", .{ t.str, @tagName(t.ttype) });
+}
 fn print_tree(n: Node, i: usize) void {
     for (0..i) |_| std.debug.print("   ", .{});
     std.debug.print(
         "{s} [{s} : {s}]\n",
-        .{ n.token.string, @tagName(n.ntype), @tagName(n.token.ttype) },
+        .{ n.token.str, @tagName(n.ntype), @tagName(n.token.ttype) },
     );
     for (n.data) |d| print_tree(d, i + 1);
-    //std.debug.print("\n", .{});
 }
