@@ -36,25 +36,24 @@ pub fn main() void {
 }
 
 pub fn calc(comptime context: anytype, comptime expression: []const u8) void {
-    comptime var t = Tokenizer{};
-    comptime var tokens: []const Token = t.tokenize(expression);
+    comptime var t = Tokenizer{ .expr = expression };
+    const tokens: []const Token = comptime t.tokenize();
 
-    //for (tokens) |tkn| {
-    //    std.debug.print("{} : {s}\n", .{ tkn.ttype, tkn.string });
-    //}
+    for (tokens) |tkn| {
+        std.debug.print("{} : {s}\n", .{ tkn.ttype, tkn.string });
+    }
 
-    comptime var p = Parser{};
-    comptime var tree: Node = p.parse(tokens, context);
+    comptime var p = Parser{ .tokens = tokens };
+    comptime var tree: Node = p.parse(context);
 
-    //print_tree(tree, 0);
-    _ = tree;
+    print_tree(tree, 0);
 }
 
 const Token = struct {
     ttype: Token_Type,
     string: []const u8,
 
-    const Token_Type = enum { integer, float, function, variable, operator };
+    const Token_Type = enum { int, float, func, value, op };
 
     fn init(ttype: Token_Type, string: []const u8) Token {
         return Token{ .ttype = ttype, .string = string };
@@ -62,54 +61,51 @@ const Token = struct {
 };
 
 const Tokenizer = struct {
-    expr: []const u8 = undefined,
+    expr: []const u8,
     idx: usize = 0,
 
-    fn tokenize(self: *Tokenizer, comptime expr: []const u8) []const Token {
+    fn tokenize(comptime t: *Tokenizer) []const Token {
         var tokens: []const Token = &.{};
-        self.expr = expr;
 
-        inline while (self.idx < self.expr.len) {
-            const c = self.expr[self.idx];
+        inline while (t.idx < t.expr.len) {
+            const c = t.expr[t.idx];
 
             if (ascii.isWhitespace(c)) {
-                self.idx += 1;
+                t.idx += 1;
                 continue;
             }
 
             tokens = tokens ++ switch (c) {
                 '0'...'9' => blk: {
-                    const integral = slice_using(self, ascii.isDigit);
-                    if (self.idx < self.expr.len and self.expr[self.idx] != '.') {
-                        break :blk .{Token.init(.integer, integral)};
+                    const integral = slice_using(t, ascii.isDigit);
+                    if (t.idx < t.expr.len and t.expr[t.idx] != '.') {
+                        break :blk .{Token.init(.int, integral)};
                     } else {
-                        self.idx += 1;
-                        const fractional = slice_using(self, ascii.isDigit);
+                        t.idx += 1;
+                        const fractional = slice_using(t, ascii.isDigit);
                         const decimal = integral ++ "." ++ fractional;
                         break :blk .{Token.init(.float, decimal)};
                     }
                 },
                 '_', 'a'...'z', 'A'...'Z' => blk: {
-                    const ident = slice_using(self, is_part_identifier);
-                    if (self.idx < self.expr.len and self.expr[self.idx] == '(') {
-                        break :blk .{Token.init(.function, ident)};
+                    const ident = slice_using(t, is_part_identifier);
+                    if (t.idx < t.expr.len and t.expr[t.idx] == '(') {
+                        break :blk .{Token.init(.func, ident)};
                     } else {
-                        break :blk .{Token.init(.variable, ident)};
+                        break :blk .{Token.init(.value, ident)};
                     }
                 },
                 '(', ')', ',' => blk: {
-                    // Another way to get slice of single char?
-                    const char = self.expr[self.idx .. self.idx + 1]; // &self.expr[self.idx] ?
-                    self.idx += 1;
-                    break :blk .{Token.init(.operator, char)};
+                    defer t.idx += 1;
+                    break :blk .{Token.init(.op, &[_]u8{t.expr[t.idx]})};
                 },
                 else => blk: {
                     if (ascii.isPrint(c)) {
-                        const op = slice_using(self, is_part_operator);
-                        break :blk .{Token.init(.operator, op)};
+                        const op = slice_using(t, is_part_operator);
+                        break :blk .{Token.init(.op, op)};
                     } else {
                         @compileError("Invalid character in expression: " ++
-                            self.expr[self.idx .. self.idx + 1] + "\n");
+                            t.expr[t.idx .. t.idx + 1]);
                     }
                 },
             };
@@ -146,81 +142,74 @@ const Node = struct {
 };
 
 const Parser = struct {
-    tokens: []const Token = undefined,
+    tokens: []const Token,
     idx: usize = 0,
 
-    fn parse(
-        self: *Parser,
-        comptime tokens: []const Token,
-        comptime context: anytype,
-    ) Node {
-        self.tokens = tokens;
-        const tree: Node = parse_prec3(self, context);
-        if (self.idx != self.tokens.len) @compileError("Unexpected token in expression\n");
+    fn parse(comptime p: *Parser, comptime context: anytype) Node {
+        const tree: Node = parse_prec3(p, context);
+        if (!inbounds(p)) @compileError("Unexpected token in expression\n");
         return tree;
     }
 
-    fn parse_prec3(self: *Parser, context: anytype) Node {
-        comptime var node: Node = parse_prec2(self, context);
-        comptime var tkn: Token = self.tokens[self.idx];
-        while (tkn.ttype == .operator and has_key(context.prec3, tkn.string)) {
-            self.idx += 1;
-            node = Node.init(&tkn, .binary, &[_]Node{ node, parse_prec2(self, context) });
-            tkn = self.tokens[self.idx];
+    fn parse_prec3(p: *Parser, context: anytype) Node {
+        comptime var node: Node = parse_prec2(p, context);
+        comptime var tkn: Token = p.tokens[p.idx];
+
+        while (tkn.ttype == .op and has_key(context.prec3, tkn.string)) {
+            p.idx += 1;
+            node = Node.init(&tkn, .binary, &[_]Node{ node, parse_prec2(p, context) });
+            tkn = p.tokens[p.idx];
         }
         return node;
     }
 
-    fn parse_prec2(self: *Parser, context: anytype) Node {
-        comptime var node: Node = parse_prec1(self, context);
-        comptime var tkn: Token = self.tokens[self.idx];
-        while (tkn.ttype == .operator and has_key(context.prec2, tkn.string)) {
-            self.idx += 1;
-            node = Node.init(&tkn, .binary, &[_]Node{ node, parse_prec1(self, context) });
-            tkn = self.tokens[self.idx];
+    fn parse_prec2(p: *Parser, context: anytype) Node {
+        comptime var node: Node = parse_prec1(p, context);
+        comptime var tkn: Token = p.tokens[p.idx];
+
+        while (tkn.ttype == .op and has_key(context.prec2, tkn.string)) {
+            p.idx += 1;
+            node = Node.init(&tkn, .binary, &[_]Node{ node, parse_prec1(p, context) });
+            tkn = p.tokens[p.idx];
         }
         return node;
     }
 
-    fn parse_prec1(self: *Parser, context: anytype) Node {
-        check_index(self);
-        const tkn: Token = self.tokens[self.idx];
+    fn parse_prec1(p: *Parser, context: anytype) Node {
+        const tkn: Token = p.tokens[p.idx];
 
-        if (tkn.ttype == .operator and has_key(context.prec1, tkn.string)) {
-            self.idx += 1;
-            return Node.init(&tkn, .unary, &[_]Node{parse_prec1(self, context)});
+        if (tkn.ttype == .op and has_key(context.prec1, tkn.string)) {
+            p.idx += 1;
+            return Node.init(&tkn, .unary, &[_]Node{parse_prec1(p, context)});
         }
-        return parse_prec0(self, context);
+        return parse_prec0(p, context);
     }
 
-    fn parse_prec0(self: *Parser, context: anytype) Node {
-        check_index(self);
-        const tkn: Token = self.tokens[self.idx];
+    fn parse_prec0(p: *Parser, context: anytype) Node {
+        const tkn: Token = p.tokens[p.idx];
 
-        if (is_symbol(self, '(')) {
-            self.idx += 1;
-            const node: Node = parse_prec3(self, context);
-            if (!is_symbol(self, ')')) @compileError("Error: missing ')'\n");
+        if (is_symbol(p, '(')) {
+            p.idx += 1;
+            const node: Node = parse_prec3(p, context);
+            if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
             return node;
         }
 
-        if (tkn.ttype == .function and has_key(context.functions, tkn.string)) {
-            self.idx += 2;
+        if (tkn.ttype == .func and has_key(context.functions, tkn.string)) {
+            p.idx += 2;
             comptime var args = [_]Node{};
 
-            while (self.idx < self.tokens.len and !is_symbol(self, ')')) {
-                if (is_symbol(self, ',')) continue;
-                args = args ++ .{parse_prec3(self, context)};
-                self.idx += 1;
+            while (inbounds(p) and !is_symbol(p, ')')) : (p.idx += 1) {
+                if (is_symbol(p, ',')) continue;
+                args = args ++ .{parse_prec3(p, context)};
             }
 
-            if (!is_symbol(self, ')')) @compileError("Error: missing ')'\n");
-
+            if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
             return Node.init(&tkn, .arglist, args);
         }
 
         // Need to check if token is in variables or constants
-        self.idx += 1;
+        p.idx += 1;
         return Node.init(&tkn, .leaf, &[_]Node{});
     }
 
@@ -229,19 +218,19 @@ const Parser = struct {
         return false;
     }
 
-    fn is_symbol(self: *Parser, c: u8) bool {
-        return self.tokens[self.idx].string[0] == c;
+    fn is_symbol(self: *Parser, symbol: u8) bool {
+        return self.tokens[self.idx].string[0] == symbol;
     }
 
-    fn check_index(self: *Parser) void {
-        if (self.idx >= self.tokens.len) @compileError("Reached end of tokens\n");
+    fn inbounds(self: *Parser) bool {
+        return self.idx < self.tokens.len;
     }
 };
 
-fn print_tree(n: *const Node, i: usize) void {
+fn print_tree(n: Node, i: usize) void {
     for (0..i) |_| std.debug.print("   ", .{});
     std.debug.print(
-        "{s} ({s} : {s})\n",
+        "{s} [{s} : {s}]\n",
         .{ n.token.string, @tagName(n.ntype), @tagName(n.token.ttype) },
     );
     for (n.data) |d| print_tree(d, i + 1);
