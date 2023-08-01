@@ -1,5 +1,3 @@
-// YOU ARE ON NOPTR BRANCH
-// REMEMBER TO SWITCH BACK WHEN DONE
 const std = @import("std");
 const ascii = std.ascii;
 
