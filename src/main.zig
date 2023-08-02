@@ -3,10 +3,6 @@ const ascii = std.ascii;
 const fmt = std.fmt;
 
 pub fn main() void {
-    // Check out potential Zig issue that discusses
-    // concatenating structs using ++
-    // Would be possible to create context structs, then
-    // bundle a variables struct in with it as/when needed
     const context = .{
         .constants = .{
             .{ "ding", 360 },
@@ -38,22 +34,18 @@ pub fn main() void {
 pub fn calc(comptime context: anytype, comptime expression: []const u8) void {
     comptime var t = Tokenizer{ .expr = expression };
     const tokens: []const Token = comptime t.tokenize();
-
     print_tokens(tokens);
-    std.debug.print("\n", .{});
 
     comptime var p = Parser{ .tokens = tokens };
-    comptime var tree: Node = p.parse(context);
-
+    comptime var tree: Node = p.parse_prec3(context);
     print_tree(tree, 0);
-    std.debug.print("\n", .{});
 }
 
 const Token = struct {
     tag: Tag,
     str: []const u8,
 
-    const Tag = enum { int, float, func, ident, op };
+    const Tag = enum { int, float, ident, func, op };
 
     fn init(tag: Tag, str: []const u8) Token {
         return Token{ .tag = tag, .str = str };
@@ -104,8 +96,7 @@ const Tokenizer = struct {
                         const op = slice_using(t, is_part_operator);
                         break :blk .{Token.init(.op, op)};
                     } else {
-                        @compileError("Invalid character in expression: " ++
-                            t.expr[t.idx .. t.idx + 1]);
+                        @compileError("Invalid char in expr: " ++ &[_]u8{c});
                     }
                 },
             };
@@ -113,10 +104,10 @@ const Tokenizer = struct {
         return tokens;
     }
 
-    fn slice_using(self: *Tokenizer, p: *const fn (c: u8) bool) []const u8 {
-        var start: usize = self.idx;
-        while (self.idx < self.expr.len and p(self.expr[self.idx])) self.idx += 1;
-        return self.expr[start..self.idx];
+    fn slice_using(t: *Tokenizer, comptime pred: fn (c: u8) bool) []const u8 {
+        var start: usize = t.idx;
+        while (t.idx < t.expr.len and pred(t.expr[t.idx])) t.idx += 1;
+        return t.expr[start..t.idx];
     }
 
     fn is_part_identifier(c: u8) bool {
@@ -124,20 +115,17 @@ const Tokenizer = struct {
     }
 
     fn is_part_operator(c: u8) bool {
-        for ("!#$%&*+-./:;<=>?@[\\]^`|~") |s| if (c == s) return true;
+        for ("!#$%&'*+-./:;<=>?@[\\]^`|~") |s| if (c == s) return true;
         return false;
     }
 };
 
 const Node = struct {
     token: *const Token,
-    tag: Tag,
     data: []const Node,
 
-    const Tag = enum { leaf, unary, binary, arglist };
-
-    fn init(token: *const Token, tag: Tag, data: []const Node) Node {
-        return Node{ .token = token, .tag = tag, .data = data };
+    fn init(token: *const Token, data: []const Node) Node {
+        return Node{ .token = token, .data = data };
     }
 };
 
@@ -145,23 +133,13 @@ const Parser = struct {
     tokens: []const Token,
     idx: usize = 0,
 
-    // Include precedence level as part of the tuple
-    // Simplifies the context struct
-    // Can check the prec level when parsing
-
-    fn parse(comptime p: *Parser, comptime context: anytype) Node {
-        const tree: Node = parse_prec3(p, context);
-        //if (!inbounds(p)) @compileError("Unexpected token in expression\n");
-        return tree;
-    }
-
     fn parse_prec3(p: *Parser, context: anytype) Node {
         comptime var node: Node = parse_prec2(p, context);
         comptime var tkn: *const Token = &p.tokens[p.idx];
 
         while (tkn.tag == .op and has_key(context.prec3, tkn.str)) {
             p.idx += 1;
-            node = Node.init(tkn, .binary, &[_]Node{ node, parse_prec2(p, context) });
+            node = Node.init(tkn, &[_]Node{ node, parse_prec2(p, context) });
             tkn = &p.tokens[p.idx];
         }
         return node;
@@ -173,7 +151,7 @@ const Parser = struct {
 
         while (tkn.tag == .op and has_key(context.prec2, tkn.str)) {
             p.idx += 1;
-            node = Node.init(tkn, .binary, &[_]Node{ node, parse_prec1(p, context) });
+            node = Node.init(tkn, &[_]Node{ node, parse_prec1(p, context) });
             tkn = &p.tokens[p.idx];
         }
         return node;
@@ -184,13 +162,13 @@ const Parser = struct {
 
         if (tkn.tag == .op and has_key(context.prec1, tkn.str)) {
             p.idx += 1;
-            return Node.init(tkn, .unary, &[_]Node{parse_prec1(p, context)});
+            return Node.init(tkn, &[_]Node{parse_prec1(p, context)});
         }
         return parse_prec0(p, context);
     }
 
     fn parse_prec0(p: *Parser, context: anytype) Node {
-        const tkn: *const Token = &p.tokens[p.idx];
+        const tkn = &p.tokens[p.idx];
 
         if (is_symbol(p, '(')) {
             p.idx += 1;
@@ -204,7 +182,7 @@ const Parser = struct {
             p.idx += 2;
             comptime var args: []const Node = &.{};
 
-            while (inbounds(p) and !is_symbol(p, ')')) {
+            while (p.idx < p.tokens.len and !is_symbol(p, ')')) {
                 if (is_symbol(p, ',')) {
                     p.idx += 1;
                     continue;
@@ -213,25 +191,20 @@ const Parser = struct {
             }
 
             if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
-            return Node.init(tkn, .arglist, args);
+            return Node.init(tkn, args);
         }
 
-        // Need to check if token is in variables or constants
         p.idx += 1;
-        return Node.init(tkn, .leaf, &[_]Node{});
+        return Node.init(tkn, &[_]Node{});
     }
 
-    fn has_key(arr: anytype, key: []const u8) bool {
-        for (arr) |pair| if (comptime std.mem.eql(u8, pair[0], key)) return true;
+    fn has_key(tuple: anytype, key: []const u8) bool {
+        for (tuple) |t| if (comptime std.mem.eql(u8, t[0], key)) return true;
         return false;
     }
 
-    fn is_symbol(self: *Parser, symbol: u8) bool {
-        return self.tokens[self.idx].str[0] == symbol;
-    }
-
-    fn inbounds(self: *Parser) bool {
-        return self.idx < self.tokens.len;
+    fn is_symbol(p: *Parser, symbol: u8) bool {
+        return p.tokens[p.idx].str[0] == symbol;
     }
 };
 
@@ -273,13 +246,11 @@ fn get_value(comptime T: anytype, tuple: anytype, key: []const u8) T {
 // Debug functions
 fn print_tokens(ts: []const Token) void {
     for (ts) |t| std.debug.print("{s} [{s}]\n", .{ t.str, @tagName(t.tag) });
+    std.debug.print("\n", .{});
 }
 
 fn print_tree(n: Node, i: usize) void {
     for (0..i) |_| std.debug.print("   ", .{});
-    std.debug.print(
-        "{s} [{s} : {s}]\n",
-        .{ n.token.str, @tagName(n.tag), @tagName(n.token.tag) },
-    );
+    std.debug.print("{s} [{s}]\n", .{ n.token.str, @tagName(n.token.tag) });
     for (n.data) |d| print_tree(d, i + 1);
 }
