@@ -1,5 +1,6 @@
 const std = @import("std");
 const ascii = std.ascii;
+const fmt = std.fmt;
 
 pub fn main() void {
     // Check out potential Zig issue that discusses
@@ -9,6 +10,7 @@ pub fn main() void {
     const context = .{
         .constants = .{
             .{ "ding", 360 },
+            .{ "a", 3 },
         },
 
         .functions = .{
@@ -51,7 +53,7 @@ const Token = struct {
     tag: Tag,
     str: []const u8,
 
-    const Tag = enum { int, float, func, value, op };
+    const Tag = enum { int, float, func, ident, op };
 
     fn init(tag: Tag, str: []const u8) Token {
         return Token{ .tag = tag, .str = str };
@@ -90,7 +92,7 @@ const Tokenizer = struct {
                     if (t.idx < t.expr.len and t.expr[t.idx] == '(') {
                         break :blk .{Token.init(.func, ident)};
                     } else {
-                        break :blk .{Token.init(.value, ident)};
+                        break :blk .{Token.init(.ident, ident)};
                     }
                 },
                 '(', ')', ',' => blk: {
@@ -142,6 +144,10 @@ const Node = struct {
 const Parser = struct {
     tokens: []const Token,
     idx: usize = 0,
+
+    // Include precedence level as part of the tuple
+    // Simplifies the context struct
+    // Can check the prec level when parsing
 
     fn parse(comptime p: *Parser, comptime context: anytype) Node {
         const tree: Node = parse_prec3(p, context);
@@ -228,6 +234,41 @@ const Parser = struct {
         return self.idx < self.tokens.len;
     }
 };
+
+fn evaluate(comptime T: anytype, node: Node, ctx: anytype) !T {
+    if (node.data.len == 0 and node.token.tag != .func) {
+        switch (node.token.tag) {
+            .int => return fmt.parseInt(comptime_int, node.token.str, 10),
+            .float => return fmt.parseFloat(comptime_float, node.token.str),
+            .ident => {
+                if (get_value_type(ctx.constants, node.token.str)) |vt| {
+                    return get_value(vt, ctx.constants, node.token.str);
+                }
+            },
+            else => unreachable,
+        }
+    }
+
+    comptime var args = &.{};
+    for (node.data) |arg| args = args ++ evaluate(arg);
+    //const func = get func
+    //return try @call()
+}
+
+fn get_value_type(comptime tuple: anytype, comptime key: []const u8) ?type {
+    for (tuple) |pair| {
+        if (std.mem.eql(u8, key, pair[0])) return @TypeOf(pair[1]);
+    }
+    return null;
+}
+
+// See if I can get value directly without needing type first
+fn get_value(comptime T: anytype, tuple: anytype, key: []const u8) T {
+    for (tuple) |pair| {
+        if (std.mem.eql(u8, key, pair[0])) return pair[1];
+    }
+    @compileError("Key not found");
+}
 
 // Debug functions
 fn print_tokens(ts: []const Token) void {
