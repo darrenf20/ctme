@@ -1,6 +1,4 @@
 const std = @import("std");
-const ascii = std.ascii;
-const fmt = std.fmt;
 
 pub fn main() void {
     const context = .{
@@ -62,19 +60,19 @@ const Tokenizer = struct {
         inline while (t.idx < t.expr.len) {
             const c = t.expr[t.idx];
 
-            if (ascii.isWhitespace(c)) {
+            if (std.ascii.isWhitespace(c)) {
                 t.idx += 1;
                 continue;
             }
 
             tokens = tokens ++ switch (c) {
                 '0'...'9' => blk: {
-                    const integral = slice_using(t, ascii.isDigit);
+                    const integral = slice_using(t, std.ascii.isDigit);
                     if (t.idx < t.expr.len and t.expr[t.idx] != '.') {
                         break :blk .{Token.init(.int, integral)};
                     } else {
                         t.idx += 1;
-                        const fractional = slice_using(t, ascii.isDigit);
+                        const fractional = slice_using(t, std.ascii.isDigit);
                         const decimal = integral ++ "." ++ fractional;
                         break :blk .{Token.init(.float, decimal)};
                     }
@@ -92,7 +90,7 @@ const Tokenizer = struct {
                     break :blk .{Token.init(.op, &[_]u8{t.expr[t.idx]})};
                 },
                 else => blk: {
-                    if (ascii.isPrint(c)) {
+                    if (std.ascii.isPrint(c)) {
                         const op = slice_using(t, is_part_operator);
                         break :blk .{Token.init(.op, op)};
                     } else {
@@ -111,7 +109,7 @@ const Tokenizer = struct {
     }
 
     fn is_part_identifier(c: u8) bool {
-        return c == '_' or ascii.isAlphabetic(c) or ascii.isDigit(c);
+        return c == '_' or std.ascii.isAlphabetic(c) or std.ascii.isDigit(c);
     }
 
     fn is_part_operator(c: u8) bool {
@@ -211,11 +209,11 @@ const Parser = struct {
 fn evaluate(comptime T: anytype, node: Node, ctx: anytype) !T {
     if (node.data.len == 0 and node.token.tag != .func) {
         switch (node.token.tag) {
-            .int => return fmt.parseInt(comptime_int, node.token.str, 10),
-            .float => return fmt.parseFloat(comptime_float, node.token.str),
+            .int => return std.fmt.parseInt(comptime_int, node.token.str, 10),
+            .float => return std.fmt.parseFloat(comptime_float, node.token.str),
             .ident => {
-                if (get_value_type(ctx.constants, node.token.str)) |vt| {
-                    return get_value(vt, ctx.constants, node.token.str);
+                if (get(ctx.constants, node.token.str)) |i| {
+                    return ctx.constants[i][1];
                 }
             },
             else => unreachable,
@@ -223,24 +221,22 @@ fn evaluate(comptime T: anytype, node: Node, ctx: anytype) !T {
     }
 
     comptime var args = &.{};
-    for (node.data) |arg| args = args ++ evaluate(arg);
+    for (node.data) |arg| {
+        // Get the return type of the arg (or its function)
+        //const ntype = get_type(arg)   or call it as part of evaluate()
+        // But what to do when it is generic?
+        // Check zig stdlib for ideas
+        args = args ++ .{evaluate(arg, ctx)};
+    }
     //const func = get func
     //return try @call()
 }
 
-fn get_value_type(comptime tuple: anytype, comptime key: []const u8) ?type {
-    for (tuple) |pair| {
-        if (std.mem.eql(u8, key, pair[0])) return @TypeOf(pair[1]);
+fn get(comptime tuple: anytype, comptime key: []const u8) ?usize {
+    inline for (tuple, 0..) |pair, i| {
+        if (std.mem.eql(u8, key, pair[0])) return i;
     }
     return null;
-}
-
-// See if I can get value directly without needing type first
-fn get_value(comptime T: anytype, tuple: anytype, key: []const u8) T {
-    for (tuple) |pair| {
-        if (std.mem.eql(u8, key, pair[0])) return pair[1];
-    }
-    @compileError("Key not found");
 }
 
 // Debug functions
