@@ -1,7 +1,3 @@
-// New plan:
-// in calc, create a union that holds all return types from the given
-// context struct. Can use @Type(), check #zig-help for example
-
 const std = @import("std");
 
 pub fn main() void {
@@ -15,31 +11,25 @@ pub fn main() void {
             .{ "sin", std.math.sin },
         },
 
-        .prec3 = .{
-            .{ "+", std.math.add },
-            .{ "-", std.math.sub },
-        },
-
-        .prec2 = .{
+        .ops = .{ .{
             .{ "*", std.math.mul },
             .{ "/", std.math.divExact },
-        },
-
-        .prec1 = .{},
-
-        .prec0 = .{},
+        }, .{
+            .{ "+", std.math.add },
+            .{ "-", std.math.sub },
+        } },
     };
 
     calc(context, "   ding + 42.069 * (a - 7) / sin(5 + 2)");
 }
 
-pub fn calc(comptime context: anytype, comptime expression: []const u8) void {
+pub fn calc(comptime ctx: anytype, comptime expression: []const u8) void {
     comptime var t = Tokenizer{ .expr = expression };
     const tokens: []const Token = comptime t.tokenize();
     print_tokens(tokens);
 
     comptime var p = Parser{ .tokens = tokens };
-    comptime var tree: Node = p.parse_prec3(context);
+    comptime var tree: Node = p.parse_prec3(ctx.ops.len - 1, ctx);
     print_tree(tree, 0);
 }
 
@@ -135,52 +125,34 @@ const Parser = struct {
     tokens: []const Token,
     idx: usize = 0,
 
-    fn parse_prec3(p: *Parser, context: anytype) Node {
-        comptime var node: Node = parse_prec2(p, context);
-        comptime var tkn: *const Token = &p.tokens[p.idx];
+    fn parse_prec(p: *Parser, comptime n: usize, ctx: anytype) Node {
+        comptime var tkn = &p.tokens[p.idx];
+        const num = has_key(ctx.ops[n], tkn.str);
+        comptime var node: Node = if (num) |_| p.parse_prec(n - 1, ctx) else undefined;
 
-        while (tkn.tag == .op and has_key(context.prec3, tkn.str)) {
+        while (tkn.tag == .op and has_key(ctx.ops[n], tkn.str) != null) {
             p.idx += 1;
-            node = Node.init(tkn, &[_]Node{ node, parse_prec2(p, context) });
+            if (num == 1) return Node.init(tkn, &[_]Node{p.parse_prec(n, ctx)});
+            node = Node.init(tkn, &[_]Node{ node, p.parse_prec(n - 1, ctx) });
             tkn = &p.tokens[p.idx];
         }
+
+        if (num == 1) return p.parse_final(ctx);
         return node;
     }
 
-    fn parse_prec2(p: *Parser, context: anytype) Node {
-        comptime var node: Node = parse_prec1(p, context);
-        comptime var tkn: *const Token = &p.tokens[p.idx];
-
-        while (tkn.tag == .op and has_key(context.prec2, tkn.str)) {
-            p.idx += 1;
-            node = Node.init(tkn, &[_]Node{ node, parse_prec1(p, context) });
-            tkn = &p.tokens[p.idx];
-        }
-        return node;
-    }
-
-    fn parse_prec1(p: *Parser, context: anytype) Node {
-        const tkn: *const Token = &p.tokens[p.idx];
-
-        if (tkn.tag == .op and has_key(context.prec1, tkn.str)) {
-            p.idx += 1;
-            return Node.init(tkn, &[_]Node{parse_prec1(p, context)});
-        }
-        return parse_prec0(p, context);
-    }
-
-    fn parse_prec0(p: *Parser, context: anytype) Node {
+    fn parse_final(p: *Parser, ctx: anytype) Node {
         const tkn = &p.tokens[p.idx];
 
         if (is_symbol(p, '(')) {
             p.idx += 1;
-            const node: Node = parse_prec3(p, context);
+            const node = p.parse_prec(ctx.ops.len - 1, ctx);
             if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
             p.idx += 1;
             return node;
         }
 
-        if (tkn.tag == .func and has_key(context.functions, tkn.str)) {
+        if (tkn.tag == .func and has_key(ctx.functions, tkn.str) != null) {
             p.idx += 2;
             comptime var args: []const Node = &.{};
 
@@ -189,7 +161,7 @@ const Parser = struct {
                     p.idx += 1;
                     continue;
                 }
-                args = args ++ .{parse_prec3(p, context)};
+                args = args ++ .{p.parse_prec(ctx.ops.len - 1, ctx)};
             }
 
             if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
@@ -200,9 +172,11 @@ const Parser = struct {
         return Node.init(tkn, &[_]Node{});
     }
 
-    fn has_key(tuple: anytype, key: []const u8) bool {
-        for (tuple) |t| if (comptime std.mem.eql(u8, t[0], key)) return true;
-        return false;
+    fn has_key(tuple: anytype, key: []const u8) ?u2 {
+        for (tuple) |t| if (comptime std.mem.eql(u8, t[0], key)) {
+            return @typeInfo(@TypeOf(t[1])).Fn.params.len;
+        };
+        return null;
     }
 
     fn is_symbol(p: *Parser, symbol: u8) bool {
