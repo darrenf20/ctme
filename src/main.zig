@@ -1,3 +1,7 @@
+// New plan:
+// in calc, create a union that holds all return types from the given
+// context struct. Can use @Type(), check #zig-help for example
+
 const std = @import("std");
 
 pub fn main() void {
@@ -206,37 +210,26 @@ const Parser = struct {
     }
 };
 
-fn evaluate(comptime T: anytype, node: Node, ctx: anytype) !T {
+fn evaluate(comptime T: anytype, node: Node, ctx: anytype) T {
     if (node.data.len == 0 and node.token.tag != .func) {
         switch (node.token.tag) {
-            .int => return std.fmt.parseInt(comptime_int, node.token.str, 10),
-            .float => return std.fmt.parseFloat(comptime_float, node.token.str),
+            .int => return std.fmt.parseInt(T, node.token.str, 10) catch unreachable,
+            .float => return std.fmt.parseFloat(T, node.token.str) catch unreachable,
             .ident => {
-                if (get(ctx.constants, node.token.str)) |i| {
-                    return ctx.constants[i][1];
-                }
+                //if (find(ctx.constants, node.token.str)) |i| {
+                //    return ctx.constants[i][1];
+                //}
             },
             else => unreachable,
         }
     }
 
     comptime var args = &.{};
-    for (node.data) |arg| {
-        // Get the return type of the arg (or its function)
-        //const ntype = get_type(arg)   or call it as part of evaluate()
-        // But what to do when it is generic?
-        // Check zig stdlib for ideas
-        args = args ++ .{evaluate(arg, ctx)};
+    inline for (node.data) |arg| {
+        args = args ++ .{evaluate(arg.rtype, arg, ctx)};
     }
-    //const func = get func
-    //return try @call()
-}
-
-fn get(comptime tuple: anytype, comptime key: []const u8) ?usize {
-    inline for (tuple, 0..) |pair, i| {
-        if (std.mem.eql(u8, key, pair[0])) return i;
-    }
-    return null;
+    //const f = get func
+    //return @call(.auto, f, args);
 }
 
 // Debug functions
