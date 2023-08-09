@@ -29,7 +29,7 @@ pub fn calc(comptime ctx: anytype, comptime expression: []const u8) void {
     print_tokens(tokens);
 
     comptime var p = Parser{ .tokens = tokens };
-    comptime var tree: Node = p.parse_prec3(ctx.ops.len - 1, ctx);
+    comptime var tree: Node = p.parse_prec(ctx.ops.len - 1, ctx);
     print_tree(tree, 0);
 }
 
@@ -128,9 +128,9 @@ const Parser = struct {
     fn parse_prec(p: *Parser, comptime n: usize, ctx: anytype) Node {
         comptime var tkn = &p.tokens[p.idx];
         const num = has_key(ctx.ops[n], tkn.str);
-        comptime var node: Node = if (num) |_| p.parse_prec(n - 1, ctx) else undefined;
+        comptime var node: Node = if (num == 2) p.parse_prec(n - 1, ctx) else undefined;
 
-        while (tkn.tag == .op and has_key(ctx.ops[n], tkn.str) != null) {
+        inline while (tkn.tag == .op and has_key(ctx.ops[n], tkn.str) != null) {
             p.idx += 1;
             if (num == 1) return Node.init(tkn, &[_]Node{p.parse_prec(n, ctx)});
             node = Node.init(tkn, &[_]Node{ node, p.parse_prec(n - 1, ctx) });
@@ -183,28 +183,6 @@ const Parser = struct {
         return p.tokens[p.idx].str[0] == symbol;
     }
 };
-
-fn evaluate(comptime T: anytype, node: Node, ctx: anytype) T {
-    if (node.data.len == 0 and node.token.tag != .func) {
-        switch (node.token.tag) {
-            .int => return std.fmt.parseInt(T, node.token.str, 10) catch unreachable,
-            .float => return std.fmt.parseFloat(T, node.token.str) catch unreachable,
-            .ident => {
-                //if (find(ctx.constants, node.token.str)) |i| {
-                //    return ctx.constants[i][1];
-                //}
-            },
-            else => unreachable,
-        }
-    }
-
-    comptime var args = &.{};
-    inline for (node.data) |arg| {
-        args = args ++ .{evaluate(arg.rtype, arg, ctx)};
-    }
-    //const f = get func
-    //return @call(.auto, f, args);
-}
 
 // Debug functions
 fn print_tokens(ts: []const Token) void {
