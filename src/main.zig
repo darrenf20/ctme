@@ -1,7 +1,3 @@
-// New plan:
-// in calc, create a union that holds all return types from the given
-// context struct. Can use @Type(), check #zig-help for example
-
 const std = @import("std");
 
 pub fn main() void {
@@ -210,26 +206,79 @@ const Parser = struct {
     }
 };
 
-fn evaluate(comptime T: anytype, node: Node, ctx: anytype) T {
-    if (node.data.len == 0 and node.token.tag != .func) {
-        switch (node.token.tag) {
-            .int => return std.fmt.parseInt(T, node.token.str, 10) catch unreachable,
-            .float => return std.fmt.parseFloat(T, node.token.str) catch unreachable,
-            .ident => {
-                //if (find(ctx.constants, node.token.str)) |i| {
-                //    return ctx.constants[i][1];
-                //}
-            },
-            else => unreachable,
-        }
+fn Evaluator(comptime ctx: anytype) type {
+    comptime var info: std.builtin.Type.Union = .{
+        .layout = .Auto,
+        .tag_type = null,
+        .fields = &.{},
+        .decls = &.{},
+    };
+
+    outer: inline for (ctx.one) |pair| {
+        var rt = if (@typeInfo(@TypeOf(pair[1])) == .Fn)
+            @typeInfo(@TypeOf(pair[1])).Fn.return_type.?
+        else
+            @TypeOf(pair[1]);
+
+        for (info.fields) |f| if (f.type == rt) continue :outer;
+
+        info.fields = info.fields ++ .{.{
+            .name = @typeName(rt),
+            .type = rt,
+            .alignment = @alignOf(rt),
+        }};
     }
 
-    comptime var args = &.{};
-    inline for (node.data) |arg| {
-        args = args ++ .{evaluate(arg.rtype, arg, ctx)};
-    }
-    //const f = get func
-    //return @call(.auto, f, args);
+    return struct {
+        context: @TypeOf(ctx) = ctx,
+        type: type = @Type(.{ .Union = info }),
+
+        const Self = @This();
+
+        fn wrap(comptime e: Self, x: anytype) e.type {
+            return @unionInit(e.type, @typeName(@TypeOf(x)), x);
+        }
+
+        fn get(e: Self, array: anytype, key: []const u8) ?e.type {
+            for (array) |pair| if (std.mem.eql(u8, key, pair[0]))
+                return e.wrap(pair[1]);
+            return null;
+        }
+
+        fn evaluate(e: Self, node: Node) e.type {
+            if (node.data.len == 0 and node.token.tag != .func) {
+                return switch (node.token.tag) {
+                    .int => e.wrap(std.fmt.parseInt(comptime_int, node.token.str, 10) catch unreachable),
+                    .float => e.wrap(std.fmt.parseFloat(comptime_float, node.token.str) catch unreachable),
+                    .ident => blk: {
+                        if (e.get(e.context.constants, node.token.str)) |value|
+                            break :blk value;
+
+                        //if (variables, node.token.str)) |value|
+                        //    break :blk value;
+
+                        @compileError("Missing identifier: " ++ node.token.str);
+                    },
+                    else => unreachable,
+                };
+            }
+
+            comptime var args = &.{};
+            inline for (node.data) |arg| {
+                const val = switch (e.evaluate(arg)) {
+                    inline else => |x| x,
+                };
+                args = args ++ .{val};
+            }
+
+            // I should change the type union to just get the type of the value
+            // including functions, as that will be a convenient way of
+            // retrieving both values and functions
+
+            //const f = get func
+            //return @call(.auto, f, args);
+        }
+    };
 }
 
 // Debug functions
