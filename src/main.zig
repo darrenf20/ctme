@@ -128,20 +128,20 @@ const Parser = struct {
         if (level == 0) return p.parse_final(ctx);
 
         const n = level - 1;
-        const is_unary = ctx.ops[n].len > 0 and
+        const unary = ctx.ops[n].len > 0 and
             @typeInfo(@TypeOf(ctx.ops[n][0][1])).Fn.params.len == 1;
 
-        comptime var node: Node = if (is_unary) undefined else p.parse_op(n - 1, ctx);
+        comptime var node: Node = if (unary) undefined else p.parse_op(n, ctx);
         comptime var tkn = &p.tokens[p.idx];
 
         while (tkn.tag == .op and has_key(ctx.ops[n], tkn.str)) {
             p.idx += 1;
-            if (is_unary) return Node.init(tkn, &[_]Node{p.parse_op(n, ctx)});
-            node = Node.init(tkn, &[_]Node{ node, p.parse_op(n - 1, ctx) });
+            if (unary) return Node.init(tkn, &[_]Node{p.parse_op(n + 1, ctx)});
+            node = Node.init(tkn, &[_]Node{ node, p.parse_op(n, ctx) });
             tkn = &p.tokens[p.idx];
         }
 
-        if (is_unary) return p.parse_op(n - 1, ctx);
+        if (unary) return p.parse_op(n, ctx);
         return node;
     }
 
@@ -150,13 +150,13 @@ const Parser = struct {
 
         if (is_symbol(p, '(')) {
             p.idx += 1;
-            const node = p.parse_op(ctx.ops.len - 1, ctx);
+            const node = p.parse_op(ctx.ops.len, ctx);
             if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
             p.idx += 1;
             return node;
         }
 
-        if (tkn.tag == .func and has_key(ctx.functions, tkn.str) != null) {
+        if (tkn.tag == .func and has_key(ctx.functions, tkn.str)) {
             p.idx += 2;
             comptime var args: []const Node = &.{};
 
@@ -165,7 +165,7 @@ const Parser = struct {
                     p.idx += 1;
                     continue;
                 }
-                args = args ++ .{p.parse_prec(ctx.ops.len - 1, ctx)};
+                args = args ++ .{p.parse_op(ctx.ops.len, ctx)};
             }
 
             if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
