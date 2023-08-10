@@ -11,31 +11,25 @@ pub fn main() void {
             .{ "sin", std.math.sin },
         },
 
-        .prec3 = .{
-            .{ "+", std.math.add },
-            .{ "-", std.math.sub },
-        },
-
-        .prec2 = .{
+        .ops = .{ .{
             .{ "*", std.math.mul },
             .{ "/", std.math.divExact },
-        },
-
-        .prec1 = .{},
-
-        .prec0 = .{},
+        }, .{
+            .{ "+", std.math.add },
+            .{ "-", std.math.sub },
+        } },
     };
 
     calc(context, "   ding + 42.069 * (a - 7) / sin(5 + 2)");
 }
 
-pub fn calc(comptime context: anytype, comptime expression: []const u8) void {
+pub fn calc(comptime ctx: anytype, comptime expression: []const u8) void {
     comptime var t = Tokenizer{ .expr = expression };
     const tokens: []const Token = comptime t.tokenize();
     print_tokens(tokens);
 
     comptime var p = Parser{ .tokens = tokens };
-    comptime var tree: Node = p.parse_prec3(context);
+    const tree: Node = comptime p.parse_op(ctx.ops.len, ctx);
     print_tree(tree, 0);
 }
 
@@ -93,9 +87,8 @@ const Tokenizer = struct {
                     if (std.ascii.isPrint(c)) {
                         const op = slice_using(t, is_part_operator);
                         break :blk .{Token.init(.op, op)};
-                    } else {
-                        @compileError("Invalid char in expr: " ++ &[_]u8{c});
                     }
+                    @compileError("Invalid char in expr: " ++ &[_]u8{c});
                 },
             };
         }
@@ -131,52 +124,39 @@ const Parser = struct {
     tokens: []const Token,
     idx: usize = 0,
 
-    fn parse_prec3(p: *Parser, context: anytype) Node {
-        comptime var node: Node = parse_prec2(p, context);
-        comptime var tkn: *const Token = &p.tokens[p.idx];
+    fn parse_op(comptime p: *Parser, comptime level: usize, ctx: anytype) Node {
+        if (level == 0) return p.parse_final(ctx);
 
-        while (tkn.tag == .op and has_key(context.prec3, tkn.str)) {
+        const n = level - 1;
+        const unary = ctx.ops[n].len > 0 and
+            @typeInfo(@TypeOf(ctx.ops[n][0][1])).Fn.params.len == 1;
+
+        comptime var node: Node = if (unary) undefined else p.parse_op(n, ctx);
+        comptime var tkn = &p.tokens[p.idx];
+
+        while (tkn.tag == .op and has_key(ctx.ops[n], tkn.str)) {
             p.idx += 1;
-            node = Node.init(tkn, &[_]Node{ node, parse_prec2(p, context) });
+            if (unary) return Node.init(tkn, &[_]Node{p.parse_op(n + 1, ctx)});
+            node = Node.init(tkn, &[_]Node{ node, p.parse_op(n, ctx) });
             tkn = &p.tokens[p.idx];
         }
+
+        if (unary) return p.parse_op(n, ctx);
         return node;
     }
 
-    fn parse_prec2(p: *Parser, context: anytype) Node {
-        comptime var node: Node = parse_prec1(p, context);
-        comptime var tkn: *const Token = &p.tokens[p.idx];
-
-        while (tkn.tag == .op and has_key(context.prec2, tkn.str)) {
-            p.idx += 1;
-            node = Node.init(tkn, &[_]Node{ node, parse_prec1(p, context) });
-            tkn = &p.tokens[p.idx];
-        }
-        return node;
-    }
-
-    fn parse_prec1(p: *Parser, context: anytype) Node {
-        const tkn: *const Token = &p.tokens[p.idx];
-
-        if (tkn.tag == .op and has_key(context.prec1, tkn.str)) {
-            p.idx += 1;
-            return Node.init(tkn, &[_]Node{parse_prec1(p, context)});
-        }
-        return parse_prec0(p, context);
-    }
-
-    fn parse_prec0(p: *Parser, context: anytype) Node {
+    fn parse_final(comptime p: *Parser, ctx: anytype) Node {
         const tkn = &p.tokens[p.idx];
 
         if (is_symbol(p, '(')) {
             p.idx += 1;
-            const node: Node = parse_prec3(p, context);
+            const node = p.parse_op(ctx.ops.len, ctx);
             if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
             p.idx += 1;
             return node;
         }
 
-        if (tkn.tag == .func and has_key(context.functions, tkn.str)) {
+        if (tkn.tag == .func and has_key(ctx.functions, tkn.str)) {
             p.idx += 2;
             comptime var args: []const Node = &.{};
 
@@ -185,7 +165,7 @@ const Parser = struct {
                     p.idx += 1;
                     continue;
                 }
-                args = args ++ .{parse_prec3(p, context)};
+                args = args ++ .{p.parse_op(ctx.ops.len, ctx)};
             }
 
             if (!is_symbol(p, ')')) @compileError("Error: missing ')'\n");
@@ -196,8 +176,8 @@ const Parser = struct {
         return Node.init(tkn, &[_]Node{});
     }
 
-    fn has_key(tuple: anytype, key: []const u8) bool {
-        for (tuple) |t| if (comptime std.mem.eql(u8, t[0], key)) return true;
+    fn has_key(tuple: anytype, comptime key: []const u8) bool {
+        inline for (tuple) |t| if (comptime std.mem.eql(u8, t[0], key)) return true;
         return false;
     }
 
