@@ -21,7 +21,8 @@ pub fn main() void {
         } },
     };
 
-    mathz.calc(context, "   ding + 42.069 * (a - 7) / sin(5 + 2)");
+    const x = mathz.calc(comptime_float, "   ding + 42.069 * (a - 7) / sin(5 + 2)", context);
+    std.debug.print("{}\n", .{x});
 }
 
 fn add(comptime a: anytype, comptime b: anytype) comptime_float {
