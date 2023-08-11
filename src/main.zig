@@ -13,13 +13,29 @@ pub fn main() void {
         },
 
         .ops = .{ .{
-            .{ "*", std.math.mul },
-            .{ "/", std.math.divExact },
+            .{ "*", mul },
+            .{ "/", div },
         }, .{
-            .{ "+", std.math.add },
-            .{ "-", std.math.sub },
+            .{ "+", add },
+            .{ "-", sub },
         } },
     };
 
     mathz.calc(context, "   ding + 42.069 * (a - 7) / sin(5 + 2)");
+}
+
+fn add(comptime a: anytype, comptime b: anytype) comptime_float {
+    return a + b;
+}
+
+fn sub(comptime a: anytype, comptime b: anytype) comptime_float {
+    return a - b;
+}
+
+fn mul(comptime a: anytype, comptime b: anytype) comptime_float {
+    return a * b;
+}
+
+fn div(comptime a: anytype, comptime b: anytype) comptime_float {
+    return a / b;
 }
