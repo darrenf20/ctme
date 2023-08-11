@@ -163,7 +163,14 @@ const Parser = struct {
 };
 
 fn Evaluator(comptime ctx: anytype) type {
-    comptime var info: std.builtin.Type.Union = .{
+    comptime var e_info: std.builtin.Type.Enum = .{
+        .tag_type = undefined,
+        .fields = &.{},
+        .decls = &.{},
+        .is_exhaustive = true,
+    };
+
+    comptime var u_info: std.builtin.Type.Union = .{
         .layout = .Auto,
         .tag_type = null,
         .fields = &.{},
@@ -176,18 +183,26 @@ fn Evaluator(comptime ctx: anytype) type {
         else
             @TypeOf(pair[1]);
 
-        for (info.fields) |f| if (f.type == rt) continue :outer;
+        for (u_info.fields) |f| if (f.type == rt) continue :outer;
 
-        info.fields = info.fields ++ .{.{
+        e_info.fields = e_info.fields ++ .{.{
+            .name = @typeName(rt),
+            .value = e_info.fields.len,
+        }};
+
+        u_info.fields = u_info.fields ++ .{.{
             .name = @typeName(rt),
             .type = rt,
             .alignment = @alignOf(rt),
         }};
     }
 
+    e_info.tag_type = std.math.IntFittingRange(0, e_info.fields.len - 1);
+    u_info.tag_type = @Type(.{ .Enum = e_info });
+
     return struct {
         context: @TypeOf(ctx) = ctx,
-        type: type = @Type(.{ .Union = info }),
+        type: type = @Type(.{ .Union = u_info }),
 
         const Self = @This();
 
@@ -232,7 +247,7 @@ fn Evaluator(comptime ctx: anytype) type {
             // retrieving both values and functions
 
             //const f = get func
-            //return @call(.auto, f, args);
+            //return @call(.auto, f, args); // may need to be called w/ comptime
         }
     };
 }
