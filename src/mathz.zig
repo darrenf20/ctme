@@ -1,13 +1,20 @@
 const std = @import("std");
 
-pub fn calc(comptime ctx: anytype, comptime expression: []const u8) void {
+pub fn calc(
+    comptime T: anytype,
+    comptime expression: []const u8,
+    comptime ctx: anytype,
+) T {
     comptime var t = Tokenizer{ .expr = expression };
     const tokens: []const Token = comptime t.tokenize();
-    print_tokens(tokens);
+    //print_tokens(tokens);
 
     comptime var p = Parser{ .tokens = tokens };
     const tree: Node = comptime p.parse_op(ctx.ops.len, ctx);
-    print_tree(tree, 0);
+    //print_tree(tree, 0);
+
+    const e = Evaluator(ctx);
+    return @field(e.evaluate(tree), @typeName(T));
 }
 
 const Token = struct {
@@ -177,7 +184,7 @@ fn Evaluator(comptime ctx: anytype) type {
         .decls = &.{},
     };
 
-    outer: inline for (ctx.one) |pair| {
+    outer: inline for (ctx.constants) |pair| {
         var rt = if (@typeInfo(@TypeOf(pair[1])) == .Fn)
             @typeInfo(@TypeOf(pair[1])).Fn.return_type.?
         else
@@ -201,7 +208,7 @@ fn Evaluator(comptime ctx: anytype) type {
     u_info.tag_type = @Type(.{ .Enum = e_info });
 
     return struct {
-        context: @TypeOf(ctx) = ctx,
+        ctx: @TypeOf(ctx) = ctx,
         type: type = @Type(.{ .Union = u_info }),
 
         const Self = @This();
@@ -216,13 +223,13 @@ fn Evaluator(comptime ctx: anytype) type {
             return null;
         }
 
-        fn evaluate(e: Self, node: Node) e.type {
+        fn evaluate(comptime e: Self, node: Node) e.type {
             if (node.data.len == 0 and node.token.tag != .func) {
                 return switch (node.token.tag) {
                     .int => e.wrap(std.fmt.parseInt(comptime_int, node.token.str, 10) catch unreachable),
                     .float => e.wrap(std.fmt.parseFloat(comptime_float, node.token.str) catch unreachable),
                     .ident => blk: {
-                        if (e.get(e.context.constants, node.token.str)) |value|
+                        if (e.get(e.ctx.constants, node.token.str)) |value|
                             break :blk value;
 
                         //if (variables, node.token.str)) |value|
@@ -242,12 +249,10 @@ fn Evaluator(comptime ctx: anytype) type {
                 args = args ++ .{val};
             }
 
-            // I should change the type union to just get the type of the value
-            // including functions, as that will be a convenient way of
-            // retrieving both values and functions
-
-            //const f = get func
-            //return @call(.auto, f, args); // may need to be called w/ comptime
+            const func = for (e.ctx.functions) |f| {
+                if (comptime std.mem.eql(u8, f, node.tkn.str)) break f;
+            } else @compileError("Function not in context: " ++ node.tkn.str);
+            return e.wrap(@call(.auto, func, args)); // may need to be called w/ comptime
         }
     };
 }
