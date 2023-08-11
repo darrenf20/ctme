@@ -6,14 +6,14 @@ pub fn calc(
     comptime ctx: anytype,
 ) T {
     comptime var t = Tokenizer{ .expr = expression };
-    const tokens: []const Token = comptime t.tokenize();
+    const tokens = comptime t.tokenize();
     //print_tokens(tokens);
 
     comptime var p = Parser{ .tokens = tokens };
-    const tree: Node = comptime p.parse_op(ctx.ops.len, ctx);
+    const tree = comptime p.parse_op(ctx.ops.len, ctx);
     //print_tree(tree, 0);
 
-    const e = Evaluator(ctx);
+    const e = Evaluator(ctx){};
     return @field(e.evaluate(tree), @typeName(T));
 }
 
@@ -217,7 +217,7 @@ fn Evaluator(comptime ctx: anytype) type {
             return @unionInit(e.type, @typeName(@TypeOf(x)), x);
         }
 
-        fn get(e: Self, array: anytype, key: []const u8) ?e.type {
+        fn get(comptime e: Self, array: anytype, key: []const u8) ?e.type {
             for (array) |pair| if (std.mem.eql(u8, key, pair[0]))
                 return e.wrap(pair[1]);
             return null;
@@ -230,7 +230,7 @@ fn Evaluator(comptime ctx: anytype) type {
                     .float => e.wrap(std.fmt.parseFloat(comptime_float, node.token.str) catch unreachable),
                     .ident => blk: {
                         if (e.get(e.ctx.constants, node.token.str)) |value|
-                            break :blk value;
+                            break :blk e.wrap(value);
 
                         //if (variables, node.token.str)) |value|
                         //    break :blk value;
