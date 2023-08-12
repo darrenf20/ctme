@@ -170,14 +170,7 @@ const Parser = struct {
 };
 
 fn Evaluator(comptime ctx: anytype) type {
-    comptime var e_info: std.builtin.Type.Enum = .{
-        .tag_type = undefined,
-        .fields = &.{},
-        .decls = &.{},
-        .is_exhaustive = true,
-    };
-
-    comptime var u_info: std.builtin.Type.Union = .{
+    comptime var info: std.builtin.Type.Union = .{
         .layout = .Auto,
         .tag_type = null,
         .fields = &.{},
@@ -190,26 +183,19 @@ fn Evaluator(comptime ctx: anytype) type {
         else
             @TypeOf(pair[1]);
 
-        for (u_info.fields) |f| if (f.type == rt) continue :outer;
+        for (info.fields) |f| if (f.type == rt) continue :outer;
 
-        e_info.fields = e_info.fields ++ .{.{
-            .name = @typeName(rt),
-            .value = e_info.fields.len,
-        }};
-
-        u_info.fields = u_info.fields ++ .{.{
+        info.fields = info.fields ++ .{.{
             .name = @typeName(rt),
             .type = rt,
             .alignment = @alignOf(rt),
         }};
     }
-
-    e_info.tag_type = std.math.IntFittingRange(0, e_info.fields.len - 1);
-    u_info.tag_type = @Type(.{ .Enum = e_info });
+    info.tag_type = std.meta.FieldEnum(@Type(.{ .Union = info }));
 
     return struct {
         ctx: @TypeOf(ctx) = ctx,
-        type: type = @Type(.{ .Union = u_info }),
+        type: type = @Type(.{ .Union = info }),
 
         const Self = @This();
 
@@ -230,7 +216,7 @@ fn Evaluator(comptime ctx: anytype) type {
                     .float => e.wrap(std.fmt.parseFloat(comptime_float, node.token.str) catch unreachable),
                     .ident => blk: {
                         if (e.get(e.ctx.constants, node.token.str)) |value|
-                            break :blk e.wrap(value);
+                            break :blk value;
 
                         //if (variables, node.token.str)) |value|
                         //    break :blk value;
@@ -241,7 +227,7 @@ fn Evaluator(comptime ctx: anytype) type {
                 };
             }
 
-            comptime var args = &.{};
+            comptime var args = &.{}; // Need types of arguments
             inline for (node.data) |arg| {
                 const val = switch (e.evaluate(arg)) {
                     inline else => |x| x,
