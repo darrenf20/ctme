@@ -45,9 +45,9 @@ const Tokenizer = struct {
             tokens = tokens ++ switch (c) {
                 '0'...'9' => blk: {
                     const integral = slice_using(t, std.ascii.isDigit);
-                    if (t.idx < t.expr.len and t.expr[t.idx] != '.') {
+                    if (t.idx == t.expr.len or t.expr[t.idx] != '.') {
                         break :blk .{Token.init(.int, integral)};
-                    } else {
+                    } else { // else branch evaluated if reached end of expr
                         t.idx += 1;
                         const fractional = slice_using(t, std.ascii.isDigit);
                         const decimal = integral ++ "." ++ fractional;
@@ -56,7 +56,7 @@ const Tokenizer = struct {
                 },
                 '_', 'a'...'z', 'A'...'Z' => blk: {
                     const ident = slice_using(t, is_part_identifier);
-                    if (t.idx < t.expr.len and t.expr[t.idx] == '(') {
+                    if (t.idx == t.expr.len or t.expr[t.idx] == '(') {
                         break :blk .{Token.init(.func, ident)};
                     } else {
                         break :blk .{Token.init(.ident, ident)};
@@ -114,8 +114,9 @@ const Parser = struct {
             @typeInfo(@TypeOf(ctx.ops[n - 1][0][1])).Fn.params.len == 1;
 
         comptime var node: Node = if (unary) undefined else p.parse_op(n - 1, ctx);
-        comptime var tkn = &p.tokens[p.idx];
+        if (p.idx == p.tokens.len) return node;
 
+        comptime var tkn = &p.tokens[p.idx];
         while (tkn.tag == .op and has_key(ctx.ops[n - 1], tkn.str)) {
             p.idx += 1;
             if (unary) return Node.init(tkn, &[_]Node{p.parse_op(n, ctx)});

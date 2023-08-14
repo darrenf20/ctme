@@ -23,7 +23,7 @@ pub fn main() void {
 
     const x = mathz.calc(
         f128,
-        exprs[1],
+        exprs[2],
         context,
     );
     std.debug.print("{}\n", .{x});
