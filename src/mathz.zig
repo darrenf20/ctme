@@ -212,8 +212,8 @@ fn Evaluator(comptime ctx: anytype) type {
         fn evaluate(comptime e: Self, node: Node) e.type {
             if (node.data.len == 0 and node.token.tag != .func) {
                 return switch (node.token.tag) {
-                    .int => e.wrap(std.fmt.parseInt(comptime_int, node.token.str, 10) catch unreachable),
-                    .float => e.wrap(std.fmt.parseFloat(comptime_float, node.token.str) catch unreachable),
+                    .int => e.wrap(std.fmt.parseInt(i128, node.token.str, 10) catch unreachable),
+                    .float => e.wrap(std.fmt.parseFloat(f128, node.token.str) catch unreachable),
                     .ident => blk: {
                         if (e.get(e.ctx.constants, node.token.str)) |value|
                             break :blk value;
@@ -227,18 +227,33 @@ fn Evaluator(comptime ctx: anytype) type {
                 };
             }
 
-            comptime var args = &.{}; // Need types of arguments
-            inline for (node.data) |arg| {
-                const val = switch (e.evaluate(arg)) {
-                    inline else => |x| x,
-                };
-                args = args ++ .{val};
+            if (node.token.tag == .func) {
+                const func = for (e.ctx.functions) |f| {
+                    if (comptime std.mem.eql(u8, f[0], node.token.str)) break f[1];
+                } else @compileError("Function not in context: " ++ node.token.str);
+
+                comptime var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
+                inline for (node.data, 0..) |arg, i| {
+                    args[i] = switch (e.evaluate(arg)) {
+                        inline else => |x| x,
+                    };
+                }
+                return e.wrap(@call(.compile_time, func, args));
             }
 
-            const func = for (e.ctx.functions) |f| {
-                if (comptime std.mem.eql(u8, f, node.tkn.str)) break f;
-            } else @compileError("Function not in context: " ++ node.tkn.str);
-            return e.wrap(@call(.auto, func, args)); // may need to be called w/ comptime
+            const func = outer: for (e.ctx.ops) |l| {
+                for (l) |o| {
+                    if (comptime std.mem.eql(u8, o[0], node.token.str)) break :outer o[1];
+                }
+            } else @compileError("Operator not in context: " ++ node.token.str);
+
+            comptime var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
+            inline for (node.data, 0..) |arg, i| {
+                args[i] = switch (e.evaluate(arg)) {
+                    inline else => |x| x,
+                };
+            }
+            return e.wrap(@call(.compile_time, func, args));
         }
     };
 }

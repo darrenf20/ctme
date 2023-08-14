@@ -30,18 +30,18 @@ pub fn main() void {
     //std.debug.print("{}\n", .{x});
 }
 
-fn add(comptime a: anytype, comptime b: anytype) comptime_float {
+fn add(comptime a: comptime_float, comptime b: comptime_float) comptime_float {
     return a + b;
 }
 
-fn sub(comptime a: anytype, comptime b: anytype) comptime_float {
+fn sub(comptime a: comptime_float, comptime b: comptime_float) comptime_float {
     return a - b;
 }
 
-fn mul(comptime a: anytype, comptime b: anytype) comptime_float {
+fn mul(comptime a: comptime_float, comptime b: comptime_float) comptime_float {
     return a * b;
 }
 
-fn div(comptime a: anytype, comptime b: anytype) comptime_float {
+fn div(comptime a: comptime_float, comptime b: comptime_float) comptime_float {
     return a / b;
 }
