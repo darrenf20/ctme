@@ -9,7 +9,7 @@ pub fn main() void {
         },
 
         .functions = .{
-            .{ "sin", std.math.sin },
+            .{ "sin", sin },
         },
 
         .ops = .{ .{
@@ -23,25 +23,35 @@ pub fn main() void {
 
     const x = mathz.calc(
         f128,
-        "   ding + 42.069 * (a - 7) / sin(5 + 2)",
+        exprs[1],
         context,
     );
-    _ = x;
-    //std.debug.print("{}\n", .{x});
+    std.debug.print("{}\n", .{x});
 }
 
-fn add(comptime a: f128, comptime b: f128) f128 {
+const exprs = .{
+    "   ding + 42.069 * (a - 7) / sin(5 + 2)",
+    "1",
+    "3 + 99",
+    "(35/5)",
+};
+
+fn add(a: f128, b: f128) f128 {
     return a + b;
 }
 
-fn sub(comptime a: f128, comptime b: f128) f128 {
+fn sub(a: f128, b: f128) f128 {
     return a - b;
 }
 
-fn mul(comptime a: f128, comptime b: f128) f128 {
+fn mul(a: f128, b: f128) f128 {
     return a * b;
 }
 
-fn div(comptime a: f128, comptime b: f128) f128 {
+fn div(a: f128, b: f128) f128 {
     return a / b;
+}
+
+fn sin(x: f128) f128 {
+    return std.math.sin(x);
 }

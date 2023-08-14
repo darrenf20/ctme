@@ -120,7 +120,7 @@ const Parser = struct {
             p.idx += 1;
             if (unary) return Node.init(tkn, &[_]Node{p.parse_op(n, ctx)});
             node = Node.init(tkn, &[_]Node{ node, p.parse_op(n - 1, ctx) });
-            tkn = &p.tokens[p.idx];
+            if (p.idx < p.tokens.len) tkn = &p.tokens[p.idx];
         }
 
         if (unary) return p.parse_op(n - 1, ctx);
@@ -173,11 +173,11 @@ fn get(comptime T: type, comptime array: anytype, comptime key: []const u8) ?T {
     return null;
 }
 
-fn evaluate(comptime T: type, node: Node, ctx: anytype) T {
+fn evaluate(comptime T: type, comptime node: Node, comptime ctx: anytype) T {
     if (node.data.len == 0 and node.token.tag != .func) {
         return switch (node.token.tag) {
-            .int => std.fmt.parseInt(T, node.token.str, 10) catch unreachable,
-            .float => std.fmt.parseFloat(T, node.token.str) catch unreachable,
+            //.int => std.fmt.parseInt(T, node.token.str, 10) catch unreachable,
+            .int, .float => std.fmt.parseFloat(T, node.token.str) catch unreachable,
             .ident => blk: {
                 if (get(T, ctx.constants, node.token.str)) |value|
                     break :blk value;
@@ -191,29 +191,22 @@ fn evaluate(comptime T: type, node: Node, ctx: anytype) T {
         };
     }
 
-    if (node.token.tag == .func) {
-        const func = for (ctx.functions) |f| {
-            if (comptime std.mem.eql(u8, f[0], node.token.str)) break f[1];
+    const func = if (node.token.tag == .func) blk: {
+        inline for (ctx.functions) |f| {
+            if (comptime std.mem.eql(u8, f[0], node.token.str)) break :blk f[1];
         } else @compileError("Function not in context: " ++ node.token.str);
-
-        comptime var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
-        inline for (node.data, 0..) |arg, i| {
-            const Arg_Type = @TypeOf(args[i]);
-            args[i] = evaluate(Arg_Type, arg, ctx);
-        }
-        return @call(.compile_time, func, args);
-    }
-
-    const func = outer: for (ctx.ops) |l| {
-        for (l) |o| {
-            if (comptime std.mem.eql(u8, o[0], node.token.str)) break :outer o[1];
-        }
-    } else @compileError("Operator not in context: " ++ node.token.str);
+    } else blk: {
+        inline for (ctx.ops) |l| {
+            inline for (l) |o| {
+                if (comptime std.mem.eql(u8, o[0], node.token.str)) break :blk o[1];
+            }
+        } else @compileError("Operator not in context: " ++ node.token.str);
+    };
 
     comptime var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
     inline for (node.data, 0..) |arg, i| {
         const Arg_Type = @TypeOf(args[i]);
-        args[i] = evaluate(Arg_Type, arg, ctx);
+        args[i] = comptime evaluate(Arg_Type, arg, ctx);
     }
     return @call(.compile_time, func, args);
 }
