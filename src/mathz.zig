@@ -13,8 +13,7 @@ pub fn calc(
     const tree = comptime p.parse_op(ctx.ops.len, ctx);
     //print_tree(tree, 0);
 
-    const e = Evaluator(ctx){};
-    return @field(e.evaluate(tree), @typeName(T));
+    return evaluate(T, tree, ctx);
 }
 
 const Token = struct {
@@ -169,93 +168,54 @@ const Parser = struct {
     }
 };
 
-fn Evaluator(comptime ctx: anytype) type {
-    comptime var info: std.builtin.Type.Union = .{
-        .layout = .Auto,
-        .tag_type = null,
-        .fields = &.{},
-        .decls = &.{},
-    };
+fn get(comptime T: type, comptime array: anytype, comptime key: []const u8) ?T {
+    for (array) |pair| if (std.mem.eql(u8, key, pair[0])) return pair[1];
+    return null;
+}
 
-    outer: inline for (ctx.constants) |pair| {
-        var rt = if (@typeInfo(@TypeOf(pair[1])) == .Fn)
-            @typeInfo(@TypeOf(pair[1])).Fn.return_type.?
-        else
-            @TypeOf(pair[1]);
+fn evaluate(comptime T: type, node: Node, ctx: anytype) T {
+    if (node.data.len == 0 and node.token.tag != .func) {
+        return switch (node.token.tag) {
+            .int => std.fmt.parseInt(T, node.token.str, 10) catch unreachable,
+            .float => std.fmt.parseFloat(T, node.token.str) catch unreachable,
+            .ident => blk: {
+                if (get(T, ctx.constants, node.token.str)) |value|
+                    break :blk value;
 
-        for (info.fields) |f| if (f.type == rt) continue :outer;
+                //if (variables, node.token.str)) |value|
+                //    break :blk value;
 
-        info.fields = info.fields ++ .{.{
-            .name = @typeName(rt),
-            .type = rt,
-            .alignment = @alignOf(rt),
-        }};
+                @compileError("Missing identifier: " ++ node.token.str);
+            },
+            else => unreachable,
+        };
     }
-    info.tag_type = std.meta.FieldEnum(@Type(.{ .Union = info }));
 
-    return struct {
-        ctx: @TypeOf(ctx) = ctx,
-        type: type = @Type(.{ .Union = info }),
+    if (node.token.tag == .func) {
+        const func = for (ctx.functions) |f| {
+            if (comptime std.mem.eql(u8, f[0], node.token.str)) break f[1];
+        } else @compileError("Function not in context: " ++ node.token.str);
 
-        const Self = @This();
-
-        fn wrap(comptime e: Self, x: anytype) e.type {
-            return @unionInit(e.type, @typeName(@TypeOf(x)), x);
+        comptime var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
+        inline for (node.data, 0..) |arg, i| {
+            const Arg_Type = @TypeOf(args[i]);
+            args[i] = evaluate(Arg_Type, arg, ctx);
         }
+        return @call(.compile_time, func, args);
+    }
 
-        fn get(comptime e: Self, array: anytype, key: []const u8) ?e.type {
-            for (array) |pair| if (std.mem.eql(u8, key, pair[0]))
-                return e.wrap(pair[1]);
-            return null;
+    const func = outer: for (ctx.ops) |l| {
+        for (l) |o| {
+            if (comptime std.mem.eql(u8, o[0], node.token.str)) break :outer o[1];
         }
+    } else @compileError("Operator not in context: " ++ node.token.str);
 
-        fn evaluate(comptime e: Self, node: Node) e.type {
-            if (node.data.len == 0 and node.token.tag != .func) {
-                return switch (node.token.tag) {
-                    .int => e.wrap(std.fmt.parseInt(i128, node.token.str, 10) catch unreachable),
-                    .float => e.wrap(std.fmt.parseFloat(f128, node.token.str) catch unreachable),
-                    .ident => blk: {
-                        if (e.get(e.ctx.constants, node.token.str)) |value|
-                            break :blk value;
-
-                        //if (variables, node.token.str)) |value|
-                        //    break :blk value;
-
-                        @compileError("Missing identifier: " ++ node.token.str);
-                    },
-                    else => unreachable,
-                };
-            }
-
-            if (node.token.tag == .func) {
-                const func = for (e.ctx.functions) |f| {
-                    if (comptime std.mem.eql(u8, f[0], node.token.str)) break f[1];
-                } else @compileError("Function not in context: " ++ node.token.str);
-
-                comptime var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
-                inline for (node.data, 0..) |arg, i| {
-                    args[i] = switch (e.evaluate(arg)) {
-                        inline else => |x| x,
-                    };
-                }
-                return e.wrap(@call(.compile_time, func, args));
-            }
-
-            const func = outer: for (e.ctx.ops) |l| {
-                for (l) |o| {
-                    if (comptime std.mem.eql(u8, o[0], node.token.str)) break :outer o[1];
-                }
-            } else @compileError("Operator not in context: " ++ node.token.str);
-
-            comptime var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
-            inline for (node.data, 0..) |arg, i| {
-                args[i] = switch (e.evaluate(arg)) {
-                    inline else => |x| x,
-                };
-            }
-            return e.wrap(@call(.compile_time, func, args));
-        }
-    };
+    comptime var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
+    inline for (node.data, 0..) |arg, i| {
+        const Arg_Type = @TypeOf(args[i]);
+        args[i] = evaluate(Arg_Type, arg, ctx);
+    }
+    return @call(.compile_time, func, args);
 }
 
 // Debug functions
