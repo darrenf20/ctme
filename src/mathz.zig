@@ -7,12 +7,8 @@ pub fn calc(
 ) T {
     comptime var t = Tokenizer{ .expr = expression };
     const tokens = comptime t.tokenize();
-    //print_tokens(tokens);
-
     comptime var p = Parser{ .tokens = tokens };
     const tree = comptime p.parse_op(ctx.ops.len, ctx);
-    //print_tree(tree, 0);
-
     return evaluate(T, tree, ctx);
 }
 
@@ -47,7 +43,7 @@ const Tokenizer = struct {
                     const integral = slice_using(t, std.ascii.isDigit);
                     if (t.idx == t.expr.len or t.expr[t.idx] != '.') {
                         break :blk .{Token.init(.int, integral)};
-                    } else { // else branch evaluated if reached end of expr
+                    } else {
                         t.idx += 1;
                         const fractional = slice_using(t, std.ascii.isDigit);
                         const decimal = integral ++ "." ++ fractional;
