@@ -13,6 +13,10 @@ pub fn main() void {
         },
 
         .ops = .{ .{
+            .{ "^", pow },
+        }, .{
+            .{ "-", neg },
+        }, .{
             .{ "*", mul },
             .{ "/", div },
         }, .{
@@ -23,7 +27,7 @@ pub fn main() void {
 
     const x = mathz.calc(
         f128,
-        exprs[2],
+        exprs[0],
         context,
     );
     std.debug.print("{}\n", .{x});
@@ -34,6 +38,8 @@ const exprs = .{
     "1",
     "3 + 99",
     "(35/5)",
+    "-5",
+    "a ^ 2",
 };
 
 fn add(a: f128, b: f128) f128 {
@@ -50,6 +56,14 @@ fn mul(a: f128, b: f128) f128 {
 
 fn div(a: f128, b: f128) f128 {
     return a / b;
+}
+
+fn neg(x: f128) f128 {
+    return -x;
+}
+
+fn pow(a: f64, b: f64) f128 {
+    return std.math.pow(f64, a, b);
 }
 
 fn sin(x: f128) f128 {

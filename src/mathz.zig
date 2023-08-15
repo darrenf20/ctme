@@ -115,13 +115,13 @@ const Parser = struct {
 
         comptime var node: Node = if (unary) undefined else p.parse_op(n - 1, ctx);
         if (p.idx == p.tokens.len) return node;
-
         comptime var tkn = &p.tokens[p.idx];
+
         while (tkn.tag == .op and has_key(ctx.ops[n - 1], tkn.str)) {
             p.idx += 1;
             if (unary) return Node.init(tkn, &[_]Node{p.parse_op(n, ctx)});
             node = Node.init(tkn, &[_]Node{ node, p.parse_op(n - 1, ctx) });
-            if (p.idx < p.tokens.len) tkn = &p.tokens[p.idx];
+            if (p.idx < p.tokens.len) tkn = &p.tokens[p.idx] else break;
         }
 
         if (unary) return p.parse_op(n - 1, ctx);
