@@ -40,18 +40,18 @@ const Tokenizer = struct {
 
             tokens = tokens ++ switch (c) {
                 '0'...'9' => blk: {
-                    const integral = slice_using(t, std.ascii.isDigit);
+                    const integral = t.slice_using(std.ascii.isDigit);
                     if (t.idx == t.expr.len or t.expr[t.idx] != '.') {
                         break :blk .{Token.init(.int, integral)};
                     } else {
                         t.idx += 1;
-                        const fractional = slice_using(t, std.ascii.isDigit);
+                        const fractional = t.slice_using(std.ascii.isDigit);
                         const decimal = integral ++ "." ++ fractional;
                         break :blk .{Token.init(.float, decimal)};
                     }
                 },
                 '_', 'a'...'z', 'A'...'Z' => blk: {
-                    const ident = slice_using(t, is_part_identifier);
+                    const ident = t.slice_using(is_part_identifier);
                     if (t.idx == t.expr.len or t.expr[t.idx] == '(') {
                         break :blk .{Token.init(.func, ident)};
                     } else {
@@ -64,7 +64,7 @@ const Tokenizer = struct {
                 },
                 else => blk: {
                     if (std.ascii.isPrint(c)) {
-                        const op = slice_using(t, is_part_operator);
+                        const op = t.slice_using(is_part_operator);
                         break :blk .{Token.init(.op, op)};
                     }
                     @compileError("Invalid char in expr: " ++ &[_]u8{c});
