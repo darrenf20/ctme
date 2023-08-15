@@ -206,20 +206,7 @@ fn evaluate(comptime T: type, comptime node: Node, comptime ctx: anytype) T {
 
     comptime var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
     inline for (node.data, 0..) |arg, i| {
-        const Arg_Type = @TypeOf(args[i]);
-        args[i] = comptime evaluate(Arg_Type, arg, ctx);
+        args[i] = comptime evaluate(@TypeOf(args[i]), arg, ctx);
     }
     return @call(.compile_time, func, args);
-}
-
-// Debug functions
-fn print_tokens(ts: []const Token) void {
-    for (ts) |t| std.debug.print("{s} [{s}]\n", .{ t.str, @tagName(t.tag) });
-    std.debug.print("\n", .{});
-}
-
-fn print_tree(n: Node, i: usize) void {
-    for (0..i) |_| std.debug.print("   ", .{});
-    std.debug.print("{s} [{s}]\n", .{ n.token.str, @tagName(n.token.tag) });
-    for (n.data) |d| print_tree(d, i + 1);
 }

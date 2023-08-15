@@ -1,6 +1,11 @@
 const std = @import("std");
 const mathz = @import("mathz");
 
+// Limitations:
+// Operators must be unique
+// Only working on floating point numbers
+// Custom functions need to be created
+// Lacks validation and error checking
 pub fn main() void {
     const context = .{
         .constants = .{
@@ -15,7 +20,7 @@ pub fn main() void {
         .ops = .{ .{
             .{ "^", pow },
         }, .{
-            .{ "-", neg },
+            .{ "~", neg },
         }, .{
             .{ "*", mul },
             .{ "/", div },
@@ -27,7 +32,7 @@ pub fn main() void {
 
     const x = mathz.calc(
         f128,
-        exprs[0],
+        exprs[5],
         context,
     );
     std.debug.print("{}\n", .{x});
@@ -38,8 +43,8 @@ const exprs = .{
     "1",
     "3 + 99",
     "(35/5)",
-    "-5",
-    "a ^ 2",
+    "~5",
+    "~a^2",
 };
 
 fn add(a: f128, b: f128) f128 {
