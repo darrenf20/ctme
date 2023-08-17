@@ -1,6 +1,7 @@
 zig-cache/
 zig-out/
 lib/
+backup/
 /release/
 /debug/
 /build/
