@@ -1,41 +1,27 @@
 const std = @import("std");
 const mathz = @import("mathz");
+const zlm = @import("zlm");
 
 // Limitations:
-// Operators must be unique
+// Operators within a context must be unique
 // Only working on floating point numbers
 // Custom functions need to be created
 // Lacks validation and error checking
+// No custom associativity (left-associative by default)
 pub fn main() void {
-    const context = .{
-        .constants = .{
-            .{ "ding", 360 },
-            .{ "a", 3 },
-        },
-
-        .functions = .{
-            .{ "sin", sin },
-        },
-
-        .ops = .{ .{
-            .{ "^", pow },
-        }, .{
-            .{ "~", neg },
-        }, .{
-            .{ "*", mul },
-            .{ "/", div },
-        }, .{
-            .{ "+", add },
-            .{ "-", sub },
-        } },
-    };
-
     const x = mathz.calc(
         f128,
-        exprs[0],
-        context,
+        exprs[7],
+        basic,
     );
     std.debug.print("{}\n", .{x});
+
+    const y = mathz.calc(
+        f32,
+        "(v1 * 2) [.] v2",
+        linalg,
+    );
+    std.debug.print("{}\n", .{y});
 }
 
 const exprs = .{
@@ -45,6 +31,8 @@ const exprs = .{
     "(35/5)",
     "~5",
     "~a^2",
+    "4 ^ (3 ^ 2)",
+    "7 - 4 + 2",
 };
 
 fn add(a: f128, b: f128) f128 {
@@ -74,3 +62,42 @@ fn pow(a: f64, b: f64) f128 {
 fn sin(x: f128) f128 {
     return std.math.sin(x);
 }
+
+const basic = .{
+    .constants = .{
+        .{ "ding", 360 },
+        .{ "a", 3 },
+    },
+
+    .functions = .{
+        .{ "sin", sin },
+    },
+
+    .ops = .{ .{
+        .{ "^", pow },
+    }, .{
+        .{ "~", neg },
+    }, .{
+        .{ "*", mul },
+        .{ "/", div },
+    }, .{
+        .{ "+", add },
+        .{ "-", sub },
+    } },
+};
+
+const linalg = .{
+    .constants = .{
+        .{ "v1", zlm.vec2(1, 2) },
+        .{ "v2", zlm.vec2(2, 1) },
+    },
+
+    .functions = .{},
+
+    .ops = .{
+        .{
+            .{ "*", zlm.Vec2.scale },
+            .{ "[.]", zlm.Vec2.dot },
+        },
+    },
+};

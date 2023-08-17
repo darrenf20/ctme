@@ -17,6 +17,9 @@ pub fn build(b: *std.Build) void {
     const mathz = b.addModule("mathz", .{ .source_file = .{ .path = "src/mathz.zig" } });
     exe.addModule("mathz", mathz);
 
+    const zlm = b.addModule("zlm", .{ .source_file = .{ .path = "lib/zlm.zig" } });
+    exe.addModule("zlm", zlm);
+
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
 

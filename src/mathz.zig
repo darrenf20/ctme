@@ -52,7 +52,7 @@ const Tokenizer = struct {
                 },
                 '_', 'a'...'z', 'A'...'Z' => blk: {
                     const ident = t.slice_using(is_part_identifier);
-                    if (t.idx == t.expr.len or t.expr[t.idx] == '(') {
+                    if (t.idx < t.expr.len and t.expr[t.idx] == '(') {
                         break :blk .{Token.init(.func, ident)};
                     } else {
                         break :blk .{Token.init(.ident, ident)};
