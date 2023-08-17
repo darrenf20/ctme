@@ -14,8 +14,8 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    const mathz = b.addModule("mathz", .{ .source_file = .{ .path = "src/mathz.zig" } });
-    exe.addModule("mathz", mathz);
+    const ctme = b.addModule("ctme", .{ .source_file = .{ .path = "src/ctme.zig" } });
+    exe.addModule("ctme", ctme);
 
     const zlm = b.addModule("zlm", .{ .source_file = .{ .path = "lib/zlm.zig" } });
     exe.addModule("zlm", zlm);

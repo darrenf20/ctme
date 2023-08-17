@@ -1,5 +1,5 @@
 const std = @import("std");
-const mathz = @import("mathz");
+const ctme = @import("ctme");
 const zlm = @import("zlm");
 
 // Limitations:
@@ -9,14 +9,14 @@ const zlm = @import("zlm");
 // Lacks validation and error checking
 // No custom associativity (left-associative by default)
 pub fn main() void {
-    const x = mathz.calc(
+    const x = ctme.calc(
         f128,
         exprs[7],
         basic,
     );
     std.debug.print("{}\n", .{x});
 
-    const y = mathz.calc(
+    const y = ctme.calc(
         f32,
         "(v1 * 2) [.] v2",
         linalg,
