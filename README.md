@@ -1,5 +1,5 @@
 # CTME
-## Compile-Time Mathematics Evaluator
+### Compile-Time Mathematics Evaluator
 
 This module implements a recursive descent parser, allowing users to write strings representing mathematical expressions that can be evaluated with user-defined context structs.
 
